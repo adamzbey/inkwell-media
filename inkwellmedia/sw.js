@@ -1,12 +1,12 @@
 // Inkwell Media service worker — makes the Media tools work offline after a first visit.
 // Scope is "/" (tool pages live at the site root), so it ONLY handles Media URLs and leaves
 // everything else on inkwelltools.com (hub, /data, /VINLookup, guides) alone.
-const VERSION = 'v3-2026-11-16';
+const VERSION = 'v4-2026-11-16';
 const SHELL = 'inkwell-media-shell-' + VERSION;
 const ENGINE = 'inkwell-media-engine-v2';
 const RUNTIME = 'inkwell-media-runtime-v1';
 
-const TOOL_PAGES = ['/compress-image/','/convert-image/','/resize-image/','/remove-background/','/crop-image/','/rotate-image/','/watermark-image/','/heic-to-jpg/','/remove-photo-location/','/compress-video/','/convert-to-mp4/','/video-to-gif/','/extract-audio/','/trim-video/','/resize-image-for-instagram/','/resize-image-for-linkedin/','/resize-youtube-thumbnail/','/resize-image-for-etsy/','/resize-image-for-shopify/','/compress-video-for-discord/','/compress-video-for-email/','/blur-faces/','/compress-image-to-size/','/compress-image-to-100kb/','/compress-image-to-200kb/','/compress-image-to-50kb/','/passport-photo/','/auto-captions/','/join-videos/','/mute-video/','/change-video-speed/','/even-out-audio-volume/'];
+const TOOL_PAGES = ['/compress-image/','/convert-image/','/resize-image/','/remove-background/','/crop-image/','/rotate-image/','/watermark-image/','/heic-to-jpg/','/remove-photo-location/','/compress-video/','/convert-to-mp4/','/video-to-gif/','/extract-audio/','/trim-video/','/resize-image-for-instagram/','/resize-image-for-linkedin/','/resize-youtube-thumbnail/','/resize-image-for-etsy/','/resize-image-for-shopify/','/compress-video-for-discord/','/compress-video-for-email/','/blur-faces/','/compress-image-to-size/','/compress-image-to-100kb/','/compress-image-to-200kb/','/compress-image-to-50kb/','/passport-photo/','/auto-captions/','/join-videos/','/mute-video/','/change-video-speed/','/even-out-audio-volume/','/resize-video-for-reels/','/add-subtitles-to-video/','/remove-background-noise/','/screen-recorder/','/photo-collage/'];
 const SHELL_URLS = ['/inkwellmedia/','/inkwellmedia/media.css','/inkwellmedia/media.js','/inkwellmedia/media-shell.js','/inkwellmedia/ffmpeg/ffmpeg.js','/inkwellmedia/ffmpeg/814.ffmpeg.js','/inkwellmedia/captions-worker.js','/favicon.svg','/favicon-32.png', ...TOOL_PAGES];
 const MEDIA_PREFIXES = ['/inkwellmedia/', ...TOOL_PAGES];
 

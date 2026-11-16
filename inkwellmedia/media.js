@@ -995,6 +995,188 @@
   const toSrt = (cues) => cues.map((c, i) => `${i + 1}\n${tc(c.start, ',')} --> ${tc(c.end, ',')}\n${c.text}\n`).join('\n');
   const toVtt = (cues) => 'WEBVTT\n\n' + cues.map((c) => `${tc(c.start, '.')} --> ${tc(c.end, '.')}\n${c.text}\n`).join('\n');
 
+  /* ---------- subtitles: read SRT / VTT, draw and burn them into a video ---------- */
+  function parseSubs(text) {
+    const cues = [];
+    const t2s = (t) => { const m = /(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})/.exec(t); if (!m) return null; return (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]) + (+m[4].padEnd(3, '0')) / 1000; };
+    const blocks = String(text).replace(/\r/g, '').replace(/^﻿/, '').split(/\n\s*\n/);
+    for (const b of blocks) {
+      const lines = b.split('\n').filter((l) => l.trim() !== '');
+      const i = lines.findIndex((l) => l.includes('-->'));
+      if (i < 0) continue;
+      const [a, z] = lines[i].split('-->');
+      const start = t2s(a), end = t2s(z);
+      const body = lines.slice(i + 1).join('\n').replace(/<[^>]+>/g, '').replace(/\{\\[^}]*\}/g, '').trim();
+      if (start == null || end == null || !body || end <= start) continue;
+      cues.push({ start, end, text: body });
+    }
+    return cues.sort((x, y) => x.start - y.start);
+  }
+  function wrapLines(ctx, text, maxW) {
+    const out = [];
+    for (const para of String(text).split('\n')) {
+      let cur = '';
+      for (const w of para.split(/\s+/).filter(Boolean)) {
+        const t = cur ? cur + ' ' + w : w;
+        if (ctx.measureText(t).width > maxW && cur) { out.push(cur); cur = w; } else cur = t;
+      }
+      if (cur) out.push(cur);
+    }
+    return out.slice(0, 3);
+  }
+  async function captionPng(text, W, H, style) {
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    const fs = Math.round(Math.max(18, (W < H ? W * 0.058 : H * 0.052)));
+    ctx.font = `700 ${fs}px Inter, "Segoe UI", Roboto, Arial, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const lines = wrapLines(ctx, text, W * 0.86);
+    const lh = Math.round(fs * 1.28);
+    const block = lh * lines.length;
+    const cy = style.pos === 'middle' ? H * 0.66 : H - Math.round(H * 0.07) - block / 2;
+    lines.forEach((ln, i) => {
+      const y = cy - block / 2 + lh * i + lh / 2;
+      if (style.look === 'box') {
+        const tw = ctx.measureText(ln).width, pad = Math.round(fs * 0.32);
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(W / 2 - tw / 2 - pad, y - lh / 2, tw + pad * 2, lh);
+        ctx.fillStyle = '#fff'; ctx.fillText(ln, W / 2, y);
+      } else {
+        ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(3, fs * 0.16); ctx.strokeStyle = '#000';
+        ctx.strokeText(ln, W / 2, y);
+        ctx.fillStyle = style.look === 'yellow' ? '#ffd23f' : '#fff'; ctx.fillText(ln, W / 2, y);
+      }
+    });
+    return new Uint8Array(await (await canvasBlob(c, 'image/png')).arrayBuffer());
+  }
+  // Draw each caption as a transparent picture and lay it over the video at its time.
+  async function burnCaptions(file, cues, style) {
+    if (!cues.length) throw new Error('no-subs');
+    const f = await ensureFfmpeg(() => { $('w-label').textContent = 'Loading the engine…'; $('w-note').textContent = 'Downloading the media engine for the first time (~30 MB). This only happens once.'; });
+    const ext = (file.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
+    const inName = 'burn-in.' + ext;
+    await f.writeFile(inName, await fetchFile(file));
+    const info = await probeHasAudio(f, inName);
+    let W = info.w || 1280, H = info.h || 720;
+    const cap = Math.min(1, 1920 / Math.max(W, H)); W = Math.round(W * cap / 2) * 2; H = Math.round(H * cap / 2) * 2;
+    $('w-label').textContent = 'Drawing the captions…';
+    const list = cues.slice(0, 600);
+    const names = [];
+    for (let i = 0; i < list.length; i++) { const n = `cap${i}.png`; await f.writeFile(n, await captionPng(list[i].text, W, H, style)); names.push(n); }
+    const inputs = ['-i', inName]; names.forEach((n) => inputs.push('-i', n));
+    const parts = [`[0:v]scale=${W}:${H},setsar=1,format=yuv420p[b0]`];
+    list.forEach((c, i) => parts.push(`[b${i}][${i + 1}:v]overlay=0:0:enable='between(t,${c.start.toFixed(3)},${c.end.toFixed(3)})'${i === list.length - 1 ? ',format=yuv420p[vout]' : `[b${i + 1}]`}`));
+    $('w-label').textContent = 'Adding captions to the video…'; $('w-note').textContent = 'Working on your device. The whole video is re-encoded, so long videos take a while.';
+    await f.exec([...inputs, '-filter_complex', parts.join(';'), '-map', '[vout]', '-map', '0:a?', '-map_metadata', '-1', '-c:v', 'libx264', '-crf', '21', '-preset', 'veryfast', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', 'burn-out.mp4']);
+    const data = await f.readFile('burn-out.mp4');
+    for (const n of [inName, ...names, 'burn-out.mp4']) { try { await f.deleteFile(n); } catch (_) {} }
+    if (!(data && data.length > 1024)) throw new Error('empty-output');
+    return { blob: new Blob([data.buffer], { type: 'video/mp4' }), count: list.length, skipped: cues.length - list.length };
+  }
+  const CAPTION_STYLE_HTML = (p) => `<div class="field"><label for="${p}-look">Caption look</label><select id="${p}-look"><option value="box">White text on a dark box (easiest to read)</option><option value="outline">White text with a black outline</option><option value="yellow">Yellow text with a black outline</option></select></div>`
+    + `<div class="field"><label for="${p}-pos">Position</label><select id="${p}-pos"><option value="bottom">Bottom</option><option value="middle">Lower middle (for Reels, TikTok and Shorts, clear of the app's buttons)</option></select></div>`;
+  const readCaptionStyle = (p) => ({ look: $(p + '-look').value, pos: $(p + '-pos').value });
+
+  /* ---------- vertical video for Reels, TikTok and Shorts ---------- */
+  const SHAPES = { '9x16': [1080, 1920, '9:16 (Reels, TikTok, Shorts, Stories)'], '4x5': [1080, 1350, '4:5 (Instagram and Facebook feed)'], '1x1': [1080, 1080, '1:1 square'], '16x9': [1920, 1080, '16:9 (YouTube, landscape)'] };
+  function reframeGraph(W, H, fill) {
+    if (fill === 'crop') return `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1,format=yuv420p[v]`;
+    if (fill === 'black' || fill === 'white') return `[0:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=${fill},setsar=1,format=yuv420p[v]`;
+    const sw = Math.round(W / 4 / 2) * 2, sh = Math.round(H / 4 / 2) * 2;
+    return `[0:v]split[a][b];[a]scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${sw}:${sh},boxblur=12:2,scale=${W}:${H},eq=brightness=-0.08[bg];[b]scale=${W}:${H}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[v]`;
+  }
+
+  /* ---------- screen recorder (browser screen capture + MediaRecorder) ---------- */
+  const canRecordScreen = () => !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia && window.MediaRecorder);
+  function recorderType() {
+    const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,opus', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    return types.find((t) => { try { return MediaRecorder.isTypeSupported(t); } catch (_) { return false; } }) || '';
+  }
+  async function recordScreen({ mic, systemAudio, fps }) {
+    const display = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: fps, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: !!systemAudio, selfBrowserSurface: 'exclude', systemAudio: systemAudio ? 'include' : 'exclude' });
+    let micStream = null;
+    if (mic) { try { micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); } catch (_) { micStream = null; } }
+    const tracks = [...display.getVideoTracks()];
+    const audioIn = [display, micStream].filter((s) => s && s.getAudioTracks().length);
+    let actx = null;
+    if (audioIn.length === 1) tracks.push(audioIn[0].getAudioTracks()[0]);
+    else if (audioIn.length > 1) {
+      actx = new AudioContext(); const dest = actx.createMediaStreamDestination();
+      audioIn.forEach((s) => actx.createMediaStreamSource(s).connect(dest));
+      tracks.push(dest.stream.getAudioTracks()[0]);
+    }
+    const stream = new MediaStream(tracks);
+    const type = recorderType();
+    const rec = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 6000000 } : undefined);
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    const done = new Promise((resolve) => { rec.onstop = resolve; });
+    const stop = () => { if (rec.state !== 'inactive') rec.stop(); };
+    display.getVideoTracks()[0].addEventListener('ended', stop);
+    rec.start(1000);
+    $('w-label').textContent = 'Recording…';
+    $('w-note').innerHTML = `Recording ${audioIn.length ? 'with sound' : 'without sound'}. Click <b>Stop recording</b> here, or “Stop sharing” in your browser’s bar, when you’re done. <button type="button" class="btn" id="rec-stop" style="margin-left:8px">Stop recording</button>`;
+    $('rec-stop').addEventListener('click', stop);
+    await done;
+    [display, micStream].forEach((s) => s && s.getTracks().forEach((t) => t.stop()));
+    if (actx) actx.close();
+    const mime = (rec.mimeType || type || 'video/webm').split(';')[0];
+    const blob = new Blob(chunks, { type: mime });
+    if (!blob.size) throw new Error('empty-output');
+    return { blob, mime, ext: mime.includes('mp4') ? 'mp4' : 'webm', withSound: audioIn.length > 0 };
+  }
+
+  /* ---------- photo collage / grid ---------- */
+  const COLLAGE_SIZES = { square: [2048, 2048, 'Square 2048 × 2048'], portrait: [1080, 1350, 'Instagram portrait 1080 × 1350'], story: [1080, 1920, 'Story 1080 × 1920'], wide: [1920, 1080, 'Wide 1920 × 1080'], print: [1800, 1200, '6 × 4 in print (300 dpi)'] };
+  function collageLayout(n, W, H, colsWanted) {
+    let cols = colsWanted || Math.max(1, Math.round(Math.sqrt(n * W / H)));
+    cols = Math.min(cols, n); const rows = Math.ceil(n / cols);
+    const cells = []; let k = 0;
+    for (let r = 0; r < rows; r++) {
+      const inRow = Math.min(cols, n - k);
+      for (let c = 0; c < inRow; c++) cells.push({ r, c, inRow, rows });
+      k += inRow;
+    }
+    return cells;
+  }
+  async function makeCollage(files, { size, cols, gap, bg, round }) {
+    const [W, H] = COLLAGE_SIZES[size] || COLLAGE_SIZES.square;
+    const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    const cells = collageLayout(files.length, W, H, cols);
+    const rows = cells[0].rows;
+    const g = Math.round(Math.min(W, H) * gap / 100);
+    const ch = (H - g * (rows + 1)) / rows;
+    for (let i = 0; i < files.length; i++) {
+      $('w-label').textContent = `Placing photo ${i + 1} of ${files.length}…`;
+      const { r, c, inRow } = cells[i];
+      const cw = (W - g * (inRow + 1)) / inRow;
+      const x = g + c * (cw + g), y = g + r * (ch + g);
+      const img = await loadImage(files[i]);
+      const s = Math.max(cw / img.width, ch / img.height);
+      const sw = cw / s, sh = ch / s, sx = (img.width - sw) / 2, sy = (img.height - sh) / 2;
+      ctx.save();
+      const rad = round ? Math.min(cw, ch) * 0.04 : 0;
+      if (rad) { ctx.beginPath(); ctx.roundRect(x, y, cw, ch, rad); ctx.clip(); }
+      ctx.drawImage(img, sx, sy, sw, sh, x, y, cw, ch);
+      ctx.restore();
+      if (typeof img.close === 'function') img.close();
+    }
+    return { canvas, W, H };
+  }
+  function orderList(host, label, extra) {
+    const draw = () => {
+      host.querySelector('[data-order]').innerHTML = `<p class="plabel">${label}</p><ol class="join-list">${selectedFiles.map((f, i) => `<li><span>${escapeHtml(f.name)}</span><span class="join-btns"><button type="button" class="transform-btn" data-up="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move ${escapeHtml(f.name)} up">↑</button><button type="button" class="transform-btn" data-down="${i}" ${i === selectedFiles.length - 1 ? 'disabled' : ''} aria-label="Move ${escapeHtml(f.name)} down">↓</button></span></li>`).join('')}</ol>`;
+      host.querySelectorAll('[data-up],[data-down]').forEach((b) => b.addEventListener('click', () => {
+        const i = +(b.dataset.up ?? b.dataset.down), j = b.dataset.up !== undefined ? i - 1 : i + 1;
+        [selectedFiles[i], selectedFiles[j]] = [selectedFiles[j], selectedFiles[i]]; draw();
+      }));
+    };
+    host.innerHTML = `<div data-order></div>` + extra;
+    draw();
+  }
+
   const checkupFixes = new Map();
   const FIX_LABELS = { clean:'remove location & camera data', jpg:'save as JPG', shrink:'make it smaller', mp4:'convert to MP4 (H.264)' };
 
@@ -1015,6 +1197,11 @@
     blur: '<circle cx="12" cy="10" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/><path d="M3 3l18 18" stroke-dasharray="2 2"/>',
     target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
     idcard: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="11" r="2.5"/><path d="M5.5 17a3.5 3.5 0 0 1 7 0"/><path d="M15 9h3M15 13h3"/>',
+    vertical: '<rect x="7" y="2" width="10" height="20" rx="2"/><path d="m10 9 4 3-4 3z"/>',
+    subs: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 15h5M13 15h5M6 11h12"/>',
+    denoise: '<path d="M2 12h2l2-6 3 12 3-9 2 5h2"/><path d="M19 8l3 8M22 8l-3 8"/>',
+    record: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor"/>',
+    collage: '<rect x="3" y="3" width="8" height="10" rx="1"/><rect x="13" y="3" width="8" height="6" rx="1"/><rect x="13" y="11" width="8" height="10" rx="1"/><rect x="3" y="15" width="8" height="6" rx="1"/>',
     captions: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 12h4M13 12h4M7 15h8"/>',
     join: '<rect x="2" y="7" width="8" height="10" rx="1.5"/><rect x="14" y="7" width="8" height="10" rx="1.5"/><path d="M10 12h4"/>',
     mute: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6M17 9l6 6"/>',
@@ -1039,6 +1226,8 @@
   const LIMITS_BY_ID = {
     'video-gif': { note:'Keep clips to a few seconds — GIFs grow fast. A desktop is recommended.', softMB:60, hardMB:250 },
     'video-join': { note:'All the clips are held in memory at once, so keep the total under a few hundred MB. A desktop is recommended.', softMB:100, hardMB:300 },
+    'image-collage': { note:'All the photos are held in memory together, so very large photos may need a computer.', softMB:40, hardMB:150 },
+    'video-subtitles': { note:'Short clips work best. The whole video is re-encoded with the words drawn in; a desktop is recommended.', softMB:100, hardMB:350 },
     'video-mute': { note:'The picture is copied without re-encoding, so even large clips are quick.', softMB:200, hardMB:1024 },
   };
   function limitsFor(id){
@@ -1363,8 +1552,9 @@
             {v:'tiny',n:'Fast',d:'Smaller download, quicker; good for clear speech',def:true},
             {v:'base',n:'Accurate',d:'Bigger download, slower; better with accents and noise'},
           ])
-          + `<div class="field"><label for="cap-out">Download as</label><select id="cap-out"><option value="srt">SRT subtitles (YouTube, Facebook, LinkedIn, Premiere)</option><option value="vtt">VTT subtitles (web players, Vimeo)</option><option value="txt">Plain transcript (.txt)</option><option value="mp4">MP4 with captions viewers can turn on</option></select></div>`
+          + `<div class="field"><label for="cap-out">Download as</label><select id="cap-out"><option value="srt">SRT subtitles (YouTube, Facebook, LinkedIn, Premiere)</option><option value="vtt">VTT subtitles (web players, Vimeo)</option><option value="txt">Plain transcript (.txt)</option><option value="mp4">MP4 with captions viewers can turn on</option><option value="burn">MP4 with captions always shown (burned in)</option></select></div><div id="cap-style" class="hidden">${CAPTION_STYLE_HTML('cb')}</div>`
           + `<p class="note-soft" style="text-align:left;margin:0 0 16px">Machine captions get most words right but not all. Read them through before you publish; an SRT opens in any text editor.</p>`;
+        $('cap-out').addEventListener('change', () => $('cap-style').classList.toggle('hidden', $('cap-out').value !== 'burn'));
       },
       async run(file){
         const base = file.name.replace(/\.[^.]+$/,'');
@@ -1382,6 +1572,10 @@
         const note = `${cues.length} captions over ${Math.round(total)} seconds. Starts: “${preview.slice(0, 140)}${preview.length > 140 ? '…' : ''}”`;
         if (outFmt === 'txt') return { blob:new Blob([res.text.trim() + '\n'], { type:'text/plain' }), name:`${base}-transcript.txt`, mime:'text/plain', compare:false, note };
         if (outFmt === 'vtt') return { blob:new Blob([toVtt(cues)], { type:'text/vtt' }), name:`${base}.vtt`, mime:'text/vtt', compare:false, note };
+        if (outFmt === 'burn' && isVideoFile(file)) {
+          const out = await burnCaptions(file, cues, readCaptionStyle('cb'));
+          return { blob:out.blob, name:`${base}-captioned.mp4`, mime:'video/mp4', compare:false, note: note + ' The captions are part of the picture. Tip: also download the SRT so you can fix a word later and burn it again with Add subtitles to video.' };
+        }
         if (outFmt === 'mp4' && isVideoFile(file)) {
           const f = await ensureFfmpeg();
           await f.writeFile('subs.srt', new TextEncoder().encode(toSrt(cues)));
@@ -1463,6 +1657,109 @@
       },
     },
 
+    'video-vertical': {
+      group:'Video & audio', engine:'ffmpeg', name:'Resize video for Reels & TikTok', blurb:'Make a video 9:16, 4:5 or square without cutting it off', icon:ICONS.vertical,
+      accept:'video/*', dropText:'Drop a video, or click to choose', dropSub:'MP4, MOV, WebM · short clips work best',
+      options(host){
+        const want = document.body.dataset.shape || '9x16';
+        host.innerHTML = `<div class="field"><label for="vv-shape">Shape</label><select id="vv-shape">${Object.entries(SHAPES).map(([k, v]) => `<option value="${k}" ${k === want ? 'selected' : ''}>${v[2]}</option>`).join('')}</select></div>`
+          + radios('vvfill', [
+            { v:'blur', n:'Blurred background', d:'Keeps the whole picture; fills the space with a soft blurred copy', def:true, tag:'Popular' },
+            { v:'crop', n:'Crop to fill', d:'Fills the frame by trimming the sides (or top and bottom)' },
+            { v:'black', n:'Black bars', d:'Keeps the whole picture with plain black around it' },
+            { v:'white', n:'White bars', d:'Keeps the whole picture with plain white around it' },
+          ])
+          + `<label class="opt-check"><input type="checkbox" id="vv-hd" checked/> Full HD (1080 wide). Untick for a faster, smaller 720 version.</label>`;
+      },
+      async run(file){
+        const shape = $('vv-shape').value; let [W, H] = SHAPES[shape] || SHAPES['9x16'];
+        if (!$('vv-hd').checked) { W = Math.round(W * 2 / 3 / 2) * 2; H = Math.round(H * 2 / 3 / 2) * 2; }
+        const fill = getRadio('vvfill') || 'blur';
+        const blob = await runFfmpeg(file, ['-filter_complex', reframeGraph(W, H, fill), '-map', '[v]', '-map', '0:a?', '-c:v','libx264','-crf','21','-preset','veryfast','-c:a','aac','-b:a','160k','-movflags','+faststart'], 'out.mp4', 'video/mp4');
+        return { blob, name:file.name.replace(/\.[^.]+$/,'')+`-${shape.replace('x','x')}.mp4`, mime:'video/mp4', compare:false, note:`${W} × ${H} MP4, ready to upload.` };
+      },
+    },
+    'video-subtitles': {
+      group:'Video & audio', engine:'ffmpeg', combine:true, name:'Add subtitles to video', blurb:'Burn an SRT or VTT file into the picture', icon:ICONS.subs,
+      accept:'video/*,.srt,.vtt,text/vtt,application/x-subrip', dropText:'Drop a video and its subtitle file, or click to choose', dropSub:'Pick both at once: MP4, MOV or WebM + .srt or .vtt',
+      options(host){
+        const v = selectedFiles.filter(isVideoFile), s = selectedFiles.filter((f) => /\.(srt|vtt)$/i.test(f.name));
+        const ok = v.length === 1 && s.length === 1;
+        host.innerHTML = (ok ? `<p class="note-soft" style="text-align:left;margin:0 0 12px">Video: <b>${escapeHtml(v[0].name)}</b><br>Subtitles: <b>${escapeHtml(s[0].name)}</b></p>` : `<p class="err" style="margin:8px 0">Choose one video and one .srt or .vtt file together. Click “Change file” and pick both. Don’t have subtitles yet? Make them with <a href="/auto-captions/">Auto captions</a>.</p>`)
+          + CAPTION_STYLE_HTML('bs') + `<p class="note-soft" style="text-align:left;margin:0 0 16px">The words become part of the picture, so they show everywhere, even where viewers can’t turn captions on.</p>`;
+        setTimeout(() => { $('go').disabled = !ok; }, 0);
+      },
+      async runAll(files){
+        const video = files.find(isVideoFile), sub = files.find((f) => /\.(srt|vtt)$/i.test(f.name));
+        if (!video || !sub) throw new Error('need-video-subs');
+        const cues = parseSubs(await sub.text());
+        if (!cues.length) throw new Error('no-subs');
+        const out = await burnCaptions(video, cues, readCaptionStyle('bs'));
+        return { blob:out.blob, name:video.name.replace(/\.[^.]+$/,'')+'-subtitled.mp4', mime:'video/mp4', compare:false, note:`${out.count} subtitles added to the picture.${out.skipped ? ` The last ${out.skipped} were left out (600 is the most at once).` : ''}` };
+      },
+    },
+    'audio-denoise': {
+      group:'Video & audio', engine:'ffmpeg', name:'Reduce background noise', blurb:'Cut hiss, hum and fan noise from voice recordings', icon:ICONS.denoise,
+      accept:'video/*,audio/*', dropText:'Drop a video or audio file, or click to choose', dropSub:'MP4, MOV, MP3, WAV, M4A',
+      options(host){ host.innerHTML = radios('dn',[
+        { v:'light', n:'Light', d:'Gentle clean-up; voices stay natural', def:true },
+        { v:'medium', n:'Medium', d:'For noticeable hiss, hum or fan noise', tag:'Most recordings' },
+        { v:'strong', n:'Strong', d:'For noisy rooms; voices can sound a little thin' },
+      ]) + `<label class="opt-check"><input type="checkbox" id="dn-level" checked/> Also even out the volume</label>`
+        + `<p class="note-soft" style="text-align:left;margin:0 0 16px">Works best on steady noise (hiss, hum, air conditioning, computer fans). It can’t remove other people talking or music. Video is copied as it is.</p>`; },
+      async run(file){
+        const lvl = getRadio('dn') || 'light';
+        const nr = { light: 10, medium: 18, strong: 28 }[lvl];
+        let af = `highpass=f=70,lowpass=f=12000,afftdn=nr=${nr}:nf=-40:tn=1`;
+        if (lvl === 'strong') af += ',anlmdn=s=0.0008';
+        if ($('dn-level').checked) af += ',loudnorm=I=-16:TP=-1.5:LRA=11';
+        const base = file.name.replace(/\.[^.]+$/,'');
+        if (isVideoFile(file)) {
+          const blob = await runFfmpeg(file, ['-c:v','copy','-af',af,'-ar','48000','-c:a','aac','-b:a','192k','-movflags','+faststart'], 'out.mp4', 'video/mp4');
+          return { blob, name:`${base}-clean-audio.mp4`, mime:'video/mp4', compare:false };
+        }
+        const blob = await runFfmpeg(file, ['-vn','-af',af,'-ar','44100','-c:a','libmp3lame','-q:a','2'], 'out.mp3', 'audio/mpeg');
+        return { blob, name:`${base}-clean.mp3`, mime:'audio/mpeg', compare:false };
+      },
+    },
+    'screen-record': {
+      group:'Video & audio', engine:'none', noFile:true, name:'Screen recorder', blurb:'Record your screen, a window or a tab, with sound', icon:ICONS.record,
+      accept:'', dropText:'', dropSub:'',
+      options(host){
+        if (!canRecordScreen()) {
+          host.innerHTML = `<p class="err" style="margin:8px 0">This browser can’t record the screen. Use Chrome, Edge, Firefox or Safari on a computer; phones and tablets don’t allow it.</p>`;
+          setTimeout(() => { $('go').disabled = true; }, 0); return;
+        }
+        host.innerHTML = `<label class="opt-check"><input type="checkbox" id="sr-mic" checked/> Record my microphone</label>`
+          + `<label class="opt-check"><input type="checkbox" id="sr-sys"/> Record sound from the tab or screen (Chrome and Edge)</label>`
+          + `<div class="field"><label for="sr-fps">Smoothness</label><select id="sr-fps"><option value="30">30 frames a second (recommended)</option><option value="15">15 frames a second (smaller file, for slides and documents)</option><option value="60">60 frames a second (games and fast motion)</option></select></div>`
+          + `<p class="note-soft" style="text-align:left;margin:0 0 16px">Click Start, then choose what to share: your whole screen, a window or a browser tab. The recording stays on this device until you download it. ${/mp4/.test(recorderType()) ? 'It’s saved as an MP4.' : 'It’s saved as a WebM; use Convert to MP4 afterwards if you need one.'}</p>`;
+      },
+      async run(){
+        const out = await recordScreen({ mic: $('sr-mic').checked, systemAudio: $('sr-sys').checked, fps: +$('sr-fps').value });
+        const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '').replace(/^(\d{8})(\d{4})$/, '$1-$2');
+        return { blob:out.blob, name:`screen-recording-${stamp}.${out.ext}`, mime:out.mime, compare:false, note: out.withSound ? 'Recorded with sound.' : 'Recorded without sound.' };
+      },
+    },
+    'image-collage': {
+      group:'Images', engine:'canvas', combine:true, name:'Photo collage', blurb:'Put several photos into one grid image', icon:ICONS.collage,
+      accept:'image/*,.heic,.heif', dropText:'Drop 2 to 24 photos, or click to choose', dropSub:'Pick them all at once; you can change the order next',
+      options(host){
+        orderList(host, 'Order (left to right, top to bottom)', `<div class="field"><label for="cl-size">Size</label><select id="cl-size">${Object.entries(COLLAGE_SIZES).map(([k, v]) => `<option value="${k}">${v[2]}</option>`).join('')}</select></div>`
+          + `<div class="field"><label for="cl-cols">Photos per row</label><select id="cl-cols"><option value="0">Automatic</option>${[1,2,3,4,5,6].map((n) => `<option value="${n}">${n}</option>`).join('')}</select></div>`
+          + `<div class="field"><label for="cl-gap">Space between photos</label><select id="cl-gap"><option value="0">None</option><option value="1">Thin</option><option value="2" selected>Medium</option><option value="4">Wide</option></select></div>`
+          + `<div class="field"><label for="cl-bg">Background colour</label><input type="color" id="cl-bg" value="#ffffff"/></div>`
+          + `<label class="opt-check"><input type="checkbox" id="cl-round"/> Rounded corners</label>`
+          + (selectedFiles.length < 2 ? `<p class="err" style="margin:8px 0">Choose at least two photos. Click “Change file” and pick them together.</p>` : selectedFiles.length > 24 ? `<p class="err" style="margin:8px 0">That’s more than 24 photos; only the first 24 are used.</p>` : ''));
+        setTimeout(() => { $('go').disabled = selectedFiles.length < 2; }, 0);
+      },
+      async runAll(files){
+        const use = files.slice(0, 24);
+        const out = await makeCollage(use, { size: $('cl-size').value, cols: +$('cl-cols').value, gap: +$('cl-gap').value, bg: $('cl-bg').value, round: $('cl-round').checked });
+        const blob = await encodeCanvas(out.canvas, 'image/jpeg', 0.92);
+        return { blob, name:`collage-${use.length}-photos.jpg`, mime:'image/jpeg', compare:false, note:`${use.length} photos, ${out.W} × ${out.H} px. Each photo is trimmed evenly to fill its space.` };
+      },
+    },
     'checkup-fix': {
       group:'Hidden', hidden:true, engine:'mixed', batch:true, name:'Fix my files', blurb:'', icon:ICONS.check,
       accept:'image/*,.heic,.heif,video/*', dropText:'Drop files', dropSub:'',
@@ -1520,7 +1817,12 @@
     'video-join':'/join-videos/',
     'video-mute':'/mute-video/',
     'video-speed':'/change-video-speed/',
-    'audio-level':'/even-out-audio-volume/'
+    'audio-level':'/even-out-audio-volume/',
+    'video-vertical':'/resize-video-for-reels/',
+    'video-subtitles':'/add-subtitles-to-video/',
+    'audio-denoise':'/remove-background-noise/',
+    'screen-record':'/screen-recorder/',
+    'image-collage':'/photo-collage/'
   };
 
   function renderHub() {
@@ -1541,7 +1843,7 @@
   let current = null, currentId = null, selectedFiles = [], outUrl = null, outName = 'download', lastOutputs = [];
   const show = (which) => {
     ['s-pick','s-ready','s-working','s-done'].forEach(s => $(s).classList.toggle('hidden', s !== which));
-    $('tool-capacity').classList.toggle('hidden', which !== 's-pick' && which !== 's-ready');
+    $('tool-capacity').classList.toggle('hidden', (which !== 's-pick' && which !== 's-ready') || !!(current && current.noFile));
   };
   const clearErr = () => $('err-slot').innerHTML = '';
   const showErr = (t,d) => $('err-slot').innerHTML = `<div class="err"><b>${t}</b><br>${d}</div>`;
@@ -1581,6 +1883,15 @@
     document.querySelector('.seo-intro')?.classList.remove('hidden');
     document.querySelector('.faq')?.classList.remove('hidden');
     if (current.engine === 'ffmpeg') ensureFfmpeg().catch(() => {});
+    $('change').classList.toggle('hidden', !!current.noFile);
+    if (current.noFile) {
+      selectedFiles = [new File([], current.name)];
+      $('r-name').textContent = current.name; $('r-size').textContent = 'Nothing is uploaded; the recording stays on this device.';
+      $('go').textContent = 'Start recording'; $('go').disabled = true; show('s-ready');
+      Promise.resolve(current.options($('opts'))).then(() => { if (canRecordScreen()) $('go').disabled = false; });
+      window.scrollTo({top:0,behavior:'smooth'});
+      return;
+    }
     show('s-pick');
     window.scrollTo({top:0,behavior:'smooth'});
   }
@@ -1627,12 +1938,12 @@
   }
 
   $('change').addEventListener('click', () => { resetSelection(); show('s-pick'); });
-  $('again').addEventListener('click', () => { if (currentId === 'checkup-fix') { backToHub(); return; } resetSelection(); show('s-pick'); });
+  $('again').addEventListener('click', () => { if (currentId === 'checkup-fix') { backToHub(); return; } if (current && current.noFile) { openTool(currentId); return; } resetSelection(); show('s-pick'); });
 
   function renderResult({ blob, name, mime, compare, inputBytes, batchCount=0, batchOutputBytes=0, notes=[], outputs=[] }) {
     if (outUrl) URL.revokeObjectURL(outUrl);
     outUrl = URL.createObjectURL(blob); outName = name;
-    $('d-from').textContent = fmtSize(inputBytes); $('d-to').textContent = fmtSize(blob.size);
+    $('d-from').textContent = inputBytes ? fmtSize(inputBytes) : 'New'; $('d-to').textContent = fmtSize(blob.size);
     const noteSlot = $('done-note'); noteSlot.innerHTML=''; $('d-pct').style.fontSize='';
     if (batchCount) {
       $('d-pct').textContent = batchCount; $('d-word').textContent = batchCount === 1 ? 'file ready' : 'files ready in one ZIP';
@@ -1705,6 +2016,9 @@
       else if (/blur-empty/.test(message)) showErr('Mark something to hide', 'No faces were found and no areas are marked. Drag across each face, plate or name you want hidden.');
       else if (/size-impossible/.test(message)) showErr('Can’t get it that small', 'Even at the lowest quality and a much smaller size it’s still over the limit. Try a bigger limit, or crop the picture first.');
       else if (/join-one/.test(message)) showErr('Choose at least two videos', 'Click “Change file” and pick all the clips you want to join at once.');
+      else if (/need-video-subs/.test(message)) showErr('Choose a video and a subtitle file', 'Click “Change file” and pick one video plus one .srt or .vtt file together.');
+      else if (/no-subs/.test(message)) showErr('No subtitles found in that file', 'Check it’s an SRT or VTT file with times like 00:00:01,000 --> 00:00:03,000.');
+      else if (/NotAllowedError|Permission denied|AbortError/.test(message) && currentId === 'screen-record') showErr('Recording didn’t start', 'Your browser asked what to share and nothing was chosen, or permission was turned off. Click Start recording and pick a screen, window or tab.');
       else if (/no-speech/.test(message)) showErr('No speech found', 'We couldn’t hear any words in this file. Check it has a sound track with talking in it.');
       else if (/speech-load|speech: .*(fetch|network|Failed|load)/i.test(message)) showErr("Couldn't load the speech model", 'The first run needs an internet connection to download it (40–80 MB). Check your connection and try again.');
       else if (/face-load/.test(message)) showErr("Couldn't load the face finder", 'Reload the page and try again. You can still mark areas by hand.');
@@ -1866,8 +2180,8 @@
 
   /* ---------- next steps after a result ---------- */
   const NEXT_STEPS = {
-    image: [['blur-faces','Blur faces & plates'],['strip-metadata','Remove location & camera data'],['image-to-size','Compress to a size'],['image-resize','Resize it for a site'],['image-watermark','Add a watermark'],['image-convert','Change the format']],
-    video: [['video-captions','Add captions'],['video-compress','Compress it'],['video-trim','Trim it'],['audio-level','Even out the volume'],['video-gif','Make a GIF'],['video-mute','Remove the sound'],['strip-metadata','Remove location data']],
+    image: [['blur-faces','Blur faces & plates'],['image-collage','Make a collage'],['strip-metadata','Remove location & camera data'],['image-to-size','Compress to a size'],['image-resize','Resize it for a site'],['image-watermark','Add a watermark'],['image-convert','Change the format']],
+    video: [['video-captions','Add captions'],['video-vertical','Make it 9:16 for Reels'],['audio-denoise','Reduce background noise'],['video-compress','Compress it'],['video-trim','Trim it'],['audio-level','Even out the volume'],['video-gif','Make a GIF'],['video-mute','Remove the sound'],['strip-metadata','Remove location data']],
   };
   function renderNextSteps(outputs) {
     const slot = $('d-next'); slot.innerHTML = '';
