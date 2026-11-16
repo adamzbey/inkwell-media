@@ -124,3 +124,5 @@ mediaShell.innerHTML = `
       Everything runs in your browser. Your files never leave your device.
     </span>
   </div>`;
+// Show the right panel straight away (the tool on tool pages, the list on the home page), so nothing jumps when media.js starts.
+document.getElementById(document.body.dataset.tool ? 'tool' : 'hub')?.classList.remove('hidden');

@@ -266,3 +266,11 @@
   .blur-status { margin:0 0 10px; }
   .transform-controls [data-kb] { padding:9px 8px; }
   @media (min-width:560px) { .transform-controls:has([data-kb]) { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+
+  .field-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:0 14px; }
+  .field textarea { width:100%; font:inherit; color:var(--paper); background:var(--ink); border:1px solid var(--ink-3); border-radius:10px; padding:11px 13px; resize:vertical; }
+  .field textarea:focus { outline:none; border-color:var(--brass); }
+  /* Reserve the space the tool fills in, so the page doesn't jump when the script draws it. */
+  body[data-tool] #media-shell { min-height:470px; }
+  body:not([data-tool]) #media-shell { min-height:2100px; }
+  @media (max-width:600px) { body[data-tool] #media-shell { min-height:550px; } body:not([data-tool]) #media-shell { min-height:3350px; } }

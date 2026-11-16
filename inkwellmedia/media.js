@@ -1177,6 +1177,183 @@
     draw();
   }
 
+  /* ---------- add text to an image ---------- */
+  const TEXT_FONTS = { sans: '800 {s}px Inter, "Segoe UI", Roboto, Arial, sans-serif', serif: '700 {s}px Fraunces, Georgia, "Times New Roman", serif', impact: '900 {s}px Impact, "Arial Black", "Helvetica Neue", Arial, sans-serif', hand: '700 {s}px "Comic Sans MS", "Segoe Print", "Bradley Hand", cursive' };
+  let textState = null;
+  function drawTextOn(ctx, W, H, o) {
+    const lines = String(o.text || '').split('\n');
+    const fs = Math.max(8, Math.round(Math.min(W, H) * o.size / 100));
+    ctx.font = TEXT_FONTS[o.font].replace('{s}', fs);
+    ctx.textAlign = o.align; ctx.textBaseline = 'middle';
+    const lh = fs * 1.18, block = lh * lines.length, pad = Math.round(Math.min(W, H) * 0.04);
+    const cy = o.pos === 'top' ? pad + block / 2 : o.pos === 'middle' ? H / 2 : H - pad - block / 2;
+    const x = o.align === 'left' ? pad : o.align === 'right' ? W - pad : W / 2;
+    lines.forEach((ln, i) => {
+      const y = cy - block / 2 + lh * i + lh / 2;
+      if (o.style === 'box' && ln.trim()) {
+        const tw = ctx.measureText(ln).width, bp = fs * 0.3;
+        const bx = o.align === 'left' ? x - bp : o.align === 'right' ? x - tw - bp : x - tw / 2 - bp;
+        ctx.fillStyle = o.box; ctx.fillRect(bx, y - lh / 2, tw + bp * 2, lh);
+      }
+      if (o.style === 'outline' || o.style === 'meme') { ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(2, fs * (o.style === 'meme' ? 0.14 : 0.09)); ctx.strokeStyle = o.style === 'meme' ? '#000' : o.stroke; ctx.strokeText(ln, x, y); }
+      if (o.style === 'shadow') { ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = fs * 0.15; ctx.shadowOffsetY = fs * 0.05; }
+      ctx.fillStyle = o.style === 'meme' ? '#fff' : o.color; ctx.fillText(o.style === 'meme' ? ln.toUpperCase() : ln, x, y);
+      ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    });
+  }
+  const readTextOpts = () => ({ text: $('tx-text').value, pos: $('tx-pos').value, align: $('tx-align').value, size: +$('tx-size').value, font: $('tx-font').value, style: $('tx-style').value, color: $('tx-color').value, stroke: '#000000', box: 'rgba(0,0,0,0.65)' });
+  async function setupTextEditor(host, file) {
+    host.innerHTML = `<div class="field"><label for="tx-text">Text</label><textarea id="tx-text" rows="2" placeholder="Type your text">SOLD</textarea></div>
+      <div class="field-row">
+        <div class="field"><label for="tx-pos">Position</label><select id="tx-pos"><option value="top">Top</option><option value="middle">Middle</option><option value="bottom" selected>Bottom</option></select></div>
+        <div class="field"><label for="tx-align">Line up</label><select id="tx-align"><option value="center">Centre</option><option value="left">Left</option><option value="right">Right</option></select></div>
+        <div class="field"><label for="tx-font">Font</label><select id="tx-font"><option value="sans">Clean</option><option value="impact">Bold poster (meme)</option><option value="serif">Classic serif</option><option value="hand">Handwritten</option></select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="tx-style">Style</label><select id="tx-style"><option value="outline">Outline</option><option value="meme">Meme (white, black outline, capitals)</option><option value="box">On a dark box</option><option value="shadow">Soft shadow</option><option value="plain">Plain</option></select></div>
+        <div class="field"><label for="tx-color">Colour</label><input type="color" id="tx-color" value="#ffffff"/></div>
+        <div class="field"><label for="tx-size">Size</label><input type="range" id="tx-size" min="3" max="25" value="10"/></div>
+      </div>
+      <div class="crop-editor"><canvas id="tx-canvas" aria-label="Preview with your text"></canvas></div>`;
+    const image = await loadImage(file);
+    const canvas = $('tx-canvas'); const sc = Math.min(1, 900 / Math.max(image.width, image.height));
+    canvas.width = Math.round(image.width * sc); canvas.height = Math.round(image.height * sc);
+    textState = { image };
+    const draw = () => { const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0, canvas.width, canvas.height); drawTextOn(ctx, canvas.width, canvas.height, readTextOpts()); };
+    host.querySelectorAll('input,select,textarea').forEach((el) => el.addEventListener('input', draw));
+    host.querySelectorAll('select').forEach((el) => el.addEventListener('change', draw));
+    $('tx-style').addEventListener('change', () => { if ($('tx-style').value === 'meme') { $('tx-font').value = 'impact'; $('tx-pos').value = $('tx-pos').value === 'middle' ? 'top' : $('tx-pos').value; } draw(); });
+    if (document.body.dataset.textstyle === 'meme') { $('tx-style').value = 'meme'; $('tx-font').value = 'impact'; $('tx-pos').value = 'top'; $('tx-text').value = 'TOP TEXT'; $('tx-size').value = 12; }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+    draw();
+  }
+
+  /* ---------- round profile picture ---------- */
+  let pfState = null;
+  async function setupProfileEditor(host, file) {
+    host.innerHTML = `<p class="note-soft" id="pf-status" style="text-align:left">Finding your face…</p>
+      <div class="crop-editor id-editor"><canvas id="pf-canvas" width="400" height="400" aria-label="Drag to move the photo inside the circle"></canvas></div>
+      <p class="note-soft crop-help">Drag to move the photo; use Zoom to fit your face in the circle.</p>
+      <div class="field"><label for="pf-zoom">Zoom</label><input type="range" id="pf-zoom" min="100" max="400" value="100"/></div>
+      <div class="field-row">
+        <div class="field"><label for="pf-size">Size</label><select id="pf-size"><option value="400">400 × 400 (LinkedIn, Slack, email)</option><option value="800" selected>800 × 800</option><option value="1080">1080 × 1080 (Instagram, Facebook)</option></select></div>
+        <div class="field"><label for="pf-bg">Outside the circle</label><select id="pf-bg"><option value="clear">Transparent (PNG)</option><option value="white">White</option><option value="square">Keep it square (no circle)</option></select></div>
+      </div>
+      <label class="opt-check"><input type="checkbox" id="pf-ring"/> Add a ring <input type="color" id="pf-ringc" value="#cca24e" aria-label="Ring colour" style="margin-left:8px;vertical-align:middle"/></label>`;
+    const image = await loadImage(file);
+    const canvas = $('pf-canvas'); const S = 400;
+    pfState = { image, s: Math.max(S / image.width, S / image.height), ox: 0, oy: 0 };
+    pfState.base = pfState.s; pfState.ox = (S - image.width * pfState.s) / 2; pfState.oy = (S - image.height * pfState.s) / 2;
+    const cover = Math.max(S / image.width, S / image.height);
+    const clamp = () => { if (pfState.s < cover) pfState.s = cover; pfState.ox = Math.min(0, Math.max(S - image.width * pfState.s, pfState.ox)); pfState.oy = Math.min(0, Math.max(S - image.height * pfState.s, pfState.oy)); };
+    const draw = () => {
+      clamp();
+      const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, S, S);
+      ctx.fillStyle = '#e9e4da'; ctx.fillRect(0, 0, S, S);
+      ctx.drawImage(image, pfState.ox, pfState.oy, image.width * pfState.s, image.height * pfState.s);
+      if ($('pf-bg').value !== 'square') {
+        ctx.save(); ctx.fillStyle = 'rgba(20,16,25,.55)'; ctx.beginPath(); ctx.rect(0, 0, S, S); ctx.arc(S / 2, S / 2, S / 2 - 2, 0, Math.PI * 2, true); ctx.fill('evenodd'); ctx.restore();
+      }
+      if ($('pf-ring').checked) { ctx.strokeStyle = $('pf-ringc').value; ctx.lineWidth = S * 0.035; ctx.beginPath(); ctx.arc(S / 2, S / 2, S / 2 - S * 0.0175, 0, Math.PI * 2); ctx.stroke(); }
+    };
+    const point = (ev) => { const r = canvas.getBoundingClientRect(); return { x: (ev.clientX - r.left) * S / r.width, y: (ev.clientY - r.top) * S / r.height }; };
+    let drag = null;
+    canvas.addEventListener('pointerdown', (ev) => { drag = { p: point(ev), ox: pfState.ox, oy: pfState.oy }; canvas.setPointerCapture(ev.pointerId); });
+    canvas.addEventListener('pointermove', (ev) => { if (!drag) return; const p = point(ev); pfState.ox = drag.ox + p.x - drag.p.x; pfState.oy = drag.oy + p.y - drag.p.y; draw(); });
+    canvas.addEventListener('pointerup', () => { drag = null; }); canvas.addEventListener('pointercancel', () => { drag = null; });
+    $('pf-zoom').addEventListener('input', () => { const old = pfState.s, s = Math.max(cover, pfState.base * (+$('pf-zoom').value / 100)), c = S / 2; pfState.ox = c - (c - pfState.ox) * s / old; pfState.oy = c - (c - pfState.oy) * s / old; pfState.s = s; draw(); });
+    ['pf-bg', 'pf-ring', 'pf-ringc'].forEach((id) => $(id).addEventListener('input', draw));
+    draw();
+    try {
+      const faces = await findFaces(image, 0.5);
+      if (faces.length) {
+        const f = faces.sort((a, b) => b.w * b.h - a.w * a.h)[0];
+        const want = S * 0.42; pfState.s = Math.max(cover, want / (f.h * 1.45)); pfState.base = pfState.s;
+        pfState.ox = S / 2 - (f.x + f.w / 2) * pfState.s; pfState.oy = S / 2 - (f.y + f.h * 0.42) * pfState.s;
+        $('pf-zoom').value = 100; $('pf-status').textContent = 'Face found and centred. Drag or zoom to adjust.';
+      } else $('pf-status').textContent = 'No face found; drag and zoom to place the photo.';
+    } catch (_) { $('pf-status').textContent = 'Drag and zoom to place the photo in the circle.'; }
+    draw();
+  }
+  function renderProfile() {
+    const N = +$('pf-size').value, S = 400, k = N / S, { image } = pfState;
+    const c = document.createElement('canvas'); c.width = N; c.height = N; const ctx = c.getContext('2d');
+    const bg = $('pf-bg').value;
+    if (bg === 'white') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, N, N); }
+    ctx.save();
+    if (bg !== 'square') { ctx.beginPath(); ctx.arc(N / 2, N / 2, N / 2, 0, Math.PI * 2); ctx.clip(); }
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, N, N);
+    ctx.drawImage(image, pfState.ox * k, pfState.oy * k, image.width * pfState.s * k, image.height * pfState.s * k);
+    ctx.restore();
+    if ($('pf-ring').checked) { ctx.strokeStyle = $('pf-ringc').value; ctx.lineWidth = N * 0.035; ctx.beginPath(); ctx.arc(N / 2, N / 2, N / 2 - N * 0.0175, 0, Math.PI * 2); ctx.stroke(); }
+    return { canvas: c, png: bg === 'clear' };
+  }
+
+  /* ---------- favicon & app icons ---------- */
+  function icoFromPngs(pngs) { // [{ size, bytes:Uint8Array }]
+    const head = 6 + 16 * pngs.length; let off = head; const total = head + pngs.reduce((a, p) => a + p.bytes.length, 0);
+    const out = new Uint8Array(total); const dv = new DataView(out.buffer);
+    dv.setUint16(0, 0, true); dv.setUint16(2, 1, true); dv.setUint16(4, pngs.length, true);
+    pngs.forEach((p, i) => {
+      const e = 6 + 16 * i;
+      out[e] = p.size >= 256 ? 0 : p.size; out[e + 1] = p.size >= 256 ? 0 : p.size; out[e + 2] = 0; out[e + 3] = 0;
+      dv.setUint16(e + 4, 1, true); dv.setUint16(e + 6, 32, true); dv.setUint32(e + 8, p.bytes.length, true); dv.setUint32(e + 12, off, true);
+      out.set(p.bytes, off); off += p.bytes.length;
+    });
+    return out;
+  }
+  async function iconCanvas(img, size, { pad, bg, round }) {
+    const c = document.createElement('canvas'); c.width = size; c.height = size; const ctx = c.getContext('2d');
+    if (bg) { ctx.fillStyle = bg; if (round) { ctx.beginPath(); ctx.roundRect(0, 0, size, size, size * 0.18); ctx.fill(); } else ctx.fillRect(0, 0, size, size); }
+    const inner = size * (1 - 2 * pad), s = Math.min(inner / img.width, inner / img.height);
+    const w = img.width * s, h = img.height * s;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+    return c;
+  }
+  async function makeIcons(file, { pad, bg, round, name }) {
+    const img = await loadImage(file);
+    const png = async (size, o) => new Uint8Array(await (await canvasBlob(await iconCanvas(img, size, o), 'image/png')).arrayBuffer());
+    const base = { pad, bg, round };
+    const files = [];
+    const add = (n, bytes, type = 'image/png') => files.push({ name: n, blob: new Blob([bytes], { type }) });
+    const ico = icoFromPngs(await Promise.all([16, 32, 48].map(async (s) => ({ size: s, bytes: await png(s, base) }))));
+    add('favicon.ico', ico, 'image/x-icon');
+    add('favicon-16x16.png', await png(16, base)); add('favicon-32x32.png', await png(32, base));
+    add('apple-touch-icon.png', await png(180, { pad: Math.max(pad, 0.08), bg: bg || '#ffffff', round: false }));
+    add('icon-192.png', await png(192, base)); add('icon-512.png', await png(512, base));
+    add('icon-maskable-512.png', await png(512, { pad: Math.max(pad, 0.2), bg: bg || '#ffffff', round: false }));
+    const svgMarkup = await (async () => { const c = await iconCanvas(img, 512, base); return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><image width="512" height="512" href="${c.toDataURL('image/png')}"/></svg>`; })();
+    add('favicon.svg', new TextEncoder().encode(svgMarkup), 'image/svg+xml');
+    const manifest = { name: name || 'My site', short_name: (name || 'My site').slice(0, 12), icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }, { src: '/icon-512.png', sizes: '512x512', type: 'image/png' }, { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }], theme_color: bg || '#ffffff', background_color: bg || '#ffffff', display: 'standalone' };
+    add('site.webmanifest', new TextEncoder().encode(JSON.stringify(manifest, null, 2)), 'application/manifest+json');
+    add('paste-into-head.html', new TextEncoder().encode(`<!-- Upload the icon files to the top folder of your website, then paste these lines inside <head> -->\n<link rel="icon" href="/favicon.ico" sizes="48x48">\n<link rel="icon" href="/favicon.svg" type="image/svg+xml">\n<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">\n<link rel="apple-touch-icon" href="/apple-touch-icon.png">\n<link rel="manifest" href="/site.webmanifest">\n`), 'text/html');
+    return files;
+  }
+
+  /* ---------- before & after picture ---------- */
+  async function beforeAfter(files, { layout, labels, size, gap }) {
+    const [a, b] = await Promise.all(files.slice(0, 2).map(loadImage));
+    const [W, H] = size === 'square' ? [2048, 2048] : size === 'portrait' ? [1080, 1350] : size === 'wide' ? [1920, 1080] : layout === 'stack' ? [1600, 2000] : [2400, 1200];
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const ctx = c.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+    const g = gap ? Math.round(Math.min(W, H) * 0.012) : 0;
+    const cells = layout === 'stack' ? [[0, 0, W, (H - g) / 2], [0, (H + g) / 2, W, (H - g) / 2]] : [[0, 0, (W - g) / 2, H], [(W + g) / 2, 0, (W - g) / 2, H]];
+    [a, b].forEach((img, i) => {
+      const [x, y, w, h] = cells[i]; const s = Math.max(w / img.width, h / img.height);
+      const sw = w / s, sh = h / s; ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, x, y, w, h);
+      if (labels) {
+        const fs = Math.round(Math.min(W, H) * 0.045), t = i ? labels[1] : labels[0];
+        ctx.font = `800 ${fs}px Inter, "Segoe UI", Arial, sans-serif`; ctx.textBaseline = 'middle';
+        const tw = ctx.measureText(t).width, p = fs * 0.45, bx = x + fs * 0.6, by = y + fs * 0.6;
+        ctx.fillStyle = 'rgba(0,0,0,.62)'; ctx.beginPath(); ctx.roundRect(bx, by, tw + p * 2, fs * 1.5, fs * 0.3); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillText(t, bx + p, by + fs * 0.76);
+      }
+      if (typeof img.close === 'function') img.close();
+    });
+    return { canvas: c, W, H };
+  }
+
   const checkupFixes = new Map();
   const FIX_LABELS = { clean:'remove location & camera data', jpg:'save as JPG', shrink:'make it smaller', mp4:'convert to MP4 (H.264)' };
 
@@ -1202,6 +1379,10 @@
     denoise: '<path d="M2 12h2l2-6 3 12 3-9 2 5h2"/><path d="M19 8l3 8M22 8l-3 8"/>',
     record: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor"/>',
     collage: '<rect x="3" y="3" width="8" height="10" rx="1"/><rect x="13" y="3" width="8" height="6" rx="1"/><rect x="13" y="11" width="8" height="10" rx="1"/><rect x="3" y="15" width="8" height="6" rx="1"/>',
+    text: '<path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/>',
+    profile: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M6.2 18.5a7 7 0 0 1 11.6 0"/>',
+    favicon: '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 16V8h7M8 12h5"/>',
+    beforeafter: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M12 5v14"/><path d="m6 12 2-2v4zM18 12l-2-2v4z"/>',
     captions: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 12h4M13 12h4M7 15h8"/>',
     join: '<rect x="2" y="7" width="8" height="10" rx="1.5"/><rect x="14" y="7" width="8" height="10" rx="1.5"/><path d="M10 12h4"/>',
     mute: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6M17 9l6 6"/>',
@@ -1264,10 +1445,10 @@
     'image-convert': {
       group:'Images', engine:'canvas', batch:true, name:'Convert image', blurb:'JPG ↔ PNG ↔ WebP', icon:ICONS.convert,
       accept:'image/*,.heic,.heif', dropText:'Drop images, or click to choose', dropSub:'JPG, PNG, WebP or HEIC · select several for a ZIP',
-      options(host){ host.innerHTML = radios('fmt',[
-        {v:'jpg',n:'JPG',d:'Small and universal (no transparency)',def:true},
-        {v:'png',n:'PNG',d:'Lossless, keeps transparency'},
-        {v:'webp',n:'WebP',d:'Small and keeps transparency'},
+      options(host){ const want = document.body.dataset.format || 'jpg'; host.innerHTML = radios('fmt',[
+        {v:'jpg',n:'JPG',d:'Small and universal (no transparency)',def: want === 'jpg'},
+        {v:'png',n:'PNG',d:'Lossless, keeps transparency',def: want === 'png'},
+        {v:'webp',n:'WebP',d:'Small and keeps transparency',def: want === 'webp'},
       ]); },
       async run(file){
         const f = getRadio('fmt')||'jpg';
@@ -1417,6 +1598,7 @@
         host.innerHTML = radios('vq',[
           {v:'d20',n:'Under 20 MB — for Discord',d:'Fits Discord’s free upload limit',def: wanted === 'd20'},
           {v:'e25',n:'Under 18 MB — for email',d:'Fits a 25 MB email limit once it’s attached',def: wanted === 'e25'},
+          {v:'w16',n:'Under 16 MB — for WhatsApp',d:'Sends quickly on any connection and fits WhatsApp’s long-standing 16 MB video limit',def: wanted === 'w16'},
           {v:'30',n:'Smaller file',d:'Best for quick sharing'},
           {v:'26',n:'Balanced',d:'A good mix of size and quality',tag:'Recommended',def: wanted === '26'},
           {v:'22',n:'Best quality',d:'Keeps it crisp, shrinks a little less'},
@@ -1425,11 +1607,12 @@
       async run(file){
         const choice = getRadio('vq')||'26';
         const base = file.name.replace(/\.[^.]+$/,'');
-        if (choice === 'd20' || choice === 'e25') {
-          const limitBytes = choice === 'd20' ? 20 * 1048576 : 18 * 1000000;
+        if (choice === 'd20' || choice === 'e25' || choice === 'w16') {
+          const limitBytes = choice === 'd20' ? 20 * 1048576 : choice === 'w16' ? 15.5 * 1000000 : 18 * 1000000;
           const blob = await fitVideoUnder(file, limitBytes, []);
-          const note = blob.size <= limitBytes ? `${fmtSize(blob.size)} — under the ${choice === 'd20' ? '20 MB Discord' : 'email'} limit.` : `Got it down to ${fmtSize(blob.size)}, still a little over. Try trimming the clip first.`;
-          return { blob, name:`${base}-${choice === 'd20' ? 'discord' : 'email'}.mp4`, mime:'video/mp4', compare:true, note };
+          const label = { d20:'20 MB Discord', e25:'email', w16:'16 MB WhatsApp' }[choice];
+          const note = blob.size <= limitBytes ? `${fmtSize(blob.size)} — under the ${label} limit.` : `Got it down to ${fmtSize(blob.size)}, still a little over. Try trimming the clip first.`;
+          return { blob, name:`${base}-${({ d20:'discord', e25:'email', w16:'whatsapp' })[choice]}.mp4`, mime:'video/mp4', compare:true, note };
         }
         const blob = await runFfmpeg(file, ['-c:v','libx264','-crf',choice,'-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','-movflags','+faststart'], 'out.mp4','video/mp4');
         return { blob, name:base+'-compressed.mp4', mime:'video/mp4', compare:true };
@@ -1555,6 +1738,7 @@
           + `<div class="field"><label for="cap-out">Download as</label><select id="cap-out"><option value="srt">SRT subtitles (YouTube, Facebook, LinkedIn, Premiere)</option><option value="vtt">VTT subtitles (web players, Vimeo)</option><option value="txt">Plain transcript (.txt)</option><option value="mp4">MP4 with captions viewers can turn on</option><option value="burn">MP4 with captions always shown (burned in)</option></select></div><div id="cap-style" class="hidden">${CAPTION_STYLE_HTML('cb')}</div>`
           + `<p class="note-soft" style="text-align:left;margin:0 0 16px">Machine captions get most words right but not all. Read them through before you publish; an SRT opens in any text editor.</p>`;
         $('cap-out').addEventListener('change', () => $('cap-style').classList.toggle('hidden', $('cap-out').value !== 'burn'));
+        if (document.body.dataset.capout === 'burn') { $('cap-out').value = 'burn'; $('cap-style').classList.remove('hidden'); $('cb-pos').value = 'middle'; $('cb-look').value = 'box'; }
       },
       async run(file){
         const base = file.name.replace(/\.[^.]+$/,'');
@@ -1587,7 +1771,7 @@
       },
     },
     'video-join': {
-      group:'Video & audio', engine:'ffmpeg', combine:true, name:'Join videos', blurb:'Put clips together into one MP4', icon:ICONS.join,
+      group:'Video & audio', engine:'ffmpeg', combine:true, canGo:(fs) => fs.length >= 2,  name:'Join videos', blurb:'Put clips together into one MP4', icon:ICONS.join,
       accept:'video/*', dropText:'Drop two or more videos, or click to choose', dropSub:'Pick them all at once; you can change the order next',
       options(host){
         const draw = () => {
@@ -1680,7 +1864,7 @@
       },
     },
     'video-subtitles': {
-      group:'Video & audio', engine:'ffmpeg', combine:true, name:'Add subtitles to video', blurb:'Burn an SRT or VTT file into the picture', icon:ICONS.subs,
+      group:'Video & audio', engine:'ffmpeg', combine:true, canGo:(fs) => fs.filter(isVideoFile).length === 1 && fs.filter((f) => /\.(srt|vtt)$/i.test(f.name)).length === 1,  name:'Add subtitles to video', blurb:'Burn an SRT or VTT file into the picture', icon:ICONS.subs,
       accept:'video/*,.srt,.vtt,text/vtt,application/x-subrip', dropText:'Drop a video and its subtitle file, or click to choose', dropSub:'Pick both at once: MP4, MOV or WebM + .srt or .vtt',
       options(host){
         const v = selectedFiles.filter(isVideoFile), s = selectedFiles.filter((f) => /\.(srt|vtt)$/i.test(f.name));
@@ -1742,7 +1926,7 @@
       },
     },
     'image-collage': {
-      group:'Images', engine:'canvas', combine:true, name:'Photo collage', blurb:'Put several photos into one grid image', icon:ICONS.collage,
+      group:'Images', engine:'canvas', combine:true, canGo:(fs) => fs.length >= 2,  name:'Photo collage', blurb:'Put several photos into one grid image', icon:ICONS.collage,
       accept:'image/*,.heic,.heif', dropText:'Drop 2 to 24 photos, or click to choose', dropSub:'Pick them all at once; you can change the order next',
       options(host){
         orderList(host, 'Order (left to right, top to bottom)', `<div class="field"><label for="cl-size">Size</label><select id="cl-size">${Object.entries(COLLAGE_SIZES).map(([k, v]) => `<option value="${k}">${v[2]}</option>`).join('')}</select></div>`
@@ -1758,6 +1942,78 @@
         const out = await makeCollage(use, { size: $('cl-size').value, cols: +$('cl-cols').value, gap: +$('cl-gap').value, bg: $('cl-bg').value, round: $('cl-round').checked });
         const blob = await encodeCanvas(out.canvas, 'image/jpeg', 0.92);
         return { blob, name:`collage-${use.length}-photos.jpg`, mime:'image/jpeg', compare:false, note:`${use.length} photos, ${out.W} × ${out.H} px. Each photo is trimmed evenly to fill its space.` };
+      },
+    },
+    'image-text': {
+      group:'Images', engine:'canvas', name:'Add text to image', blurb:'Captions, memes, “SOLD” stamps and titles', icon:ICONS.text,
+      accept:'image/*,.heic,.heif', dropText:'Drop a photo, or click to choose', dropSub:'JPG, PNG, WebP or HEIC',
+      async options(host, file){ await setupTextEditor(host, file); },
+      async run(file){
+        const { image } = textState;
+        const c = document.createElement('canvas'); c.width = image.width; c.height = image.height;
+        const ctx = c.getContext('2d'); ctx.drawImage(image, 0, 0); drawTextOn(ctx, c.width, c.height, readTextOpts());
+        const out = imageOutput(file); const blob = await canvasBlob(c, out.type, out.quality);
+        return { blob, name:file.name.replace(/\.[^.]+$/,'')+'-text.'+out.ext, mime:out.type, compare:false, note:'Saved at full size. Location and camera details are left out of the new copy.' };
+      },
+    },
+    'profile-picture': {
+      group:'Images', engine:'canvas', name:'Profile picture maker', blurb:'Round profile photo for LinkedIn, Slack and more', icon:ICONS.profile,
+      accept:'image/*,.heic,.heif', dropText:'Drop a photo of you, or click to choose', dropSub:'Your face is found and centred for you',
+      async options(host, file){ await setupProfileEditor(host, file); },
+      async run(file){
+        const out = renderProfile();
+        const blob = await canvasBlob(out.canvas, out.png ? 'image/png' : 'image/jpeg', out.png ? undefined : 0.94);
+        return { blob, name:file.name.replace(/\.[^.]+$/,'')+`-profile-${out.canvas.width}.${out.png ? 'png' : 'jpg'}`, mime: out.png ? 'image/png' : 'image/jpeg', compare:false, note:`${out.canvas.width} × ${out.canvas.width} px. Most sites crop to a circle themselves, so the square option works everywhere too.` };
+      },
+    },
+    'favicon': {
+      group:'Images', engine:'canvas', name:'Favicon & app icon maker', blurb:'Every icon size for a website, from your logo', icon:ICONS.favicon,
+      accept:'image/*,.svg', dropText:'Drop your logo, or click to choose', dropSub:'A square PNG or SVG works best',
+      options(host){
+        host.innerHTML = `<div class="field"><label for="fv-name">Website or app name</label><input type="text" id="fv-name" placeholder="My site" maxlength="40"/></div>
+          <div class="field-row"><div class="field"><label for="fv-bg">Background</label><select id="fv-bg"><option value="">Transparent</option><option value="#ffffff">White</option><option value="custom">A colour…</option></select></div>
+          <div class="field"><label for="fv-color">Colour</label><input type="color" id="fv-color" value="#141019"/></div>
+          <div class="field"><label for="fv-pad">Space around the logo</label><select id="fv-pad"><option value="0">None</option><option value="0.06" selected>A little</option><option value="0.14">More</option></select></div></div>
+          <label class="opt-check"><input type="checkbox" id="fv-round"/> Rounded square background</label>
+          <p class="note-soft" style="text-align:left;margin:0 0 16px">You get a ZIP with favicon.ico (16, 32 and 48 px inside), PNG and SVG icons, Apple touch and Android icons (including a “maskable” one), a site.webmanifest and the lines to paste into your page’s &lt;head&gt;.</p>`;
+      },
+      async run(file){
+        const bgSel = $('fv-bg').value; const bg = bgSel === 'custom' ? $('fv-color').value : bgSel;
+        const files = await makeIcons(file, { pad: +$('fv-pad').value, bg, round: $('fv-round').checked, name: $('fv-name').value.trim() });
+        const blob = await createZip(files);
+        return { blob, name:'favicons.zip', mime:'application/zip', compare:false, note:`${files.length} files: favicon.ico, PNG icons from 16 to 512 px, favicon.svg, site.webmanifest and paste-into-head.html with the HTML to add.` };
+      },
+    },
+    'gif-mp4': {
+      group:'Video & audio', engine:'ffmpeg', name:'GIF to MP4', blurb:'Turn a GIF into a small MP4 that plays everywhere', icon:ICONS.gif,
+      accept:'image/gif,.gif', dropText:'Drop a GIF, or click to choose', dropSub:'Animated GIFs of any size',
+      options(host){ host.innerHTML = radios('gl',[
+        { v:'1', n:'Play once', d:'Same length as the GIF', def:true },
+        { v:'3', n:'Repeat 3 times', d:'Handy for short loops on Instagram or X' },
+        { v:'5', n:'Repeat 5 times', d:'For very short loops' },
+      ]) + `<p class="note-soft" style="text-align:left;margin:0 0 16px">MP4s are usually 5–20× smaller than the same GIF and upload anywhere a video does.</p>`; },
+      async run(file){
+        const loops = +(getRadio('gl') || '1');
+        const blob = await runFfmpeg(file, ['-movflags','+faststart','-pix_fmt','yuv420p','-vf','scale=trunc(iw/2)*2:trunc(ih/2)*2','-c:v','libx264','-crf','22','-preset','veryfast','-an'], 'out.mp4', 'video/mp4', loops > 1 ? ['-stream_loop', String(loops - 1)] : []);
+        return { blob, name:file.name.replace(/\.[^.]+$/,'')+'.mp4', mime:'video/mp4', compare:true };
+      },
+    },
+    'before-after': {
+      group:'Images', engine:'canvas', combine:true, canGo:(fs) => fs.length === 2,  name:'Before & after picture', blurb:'Two photos side by side with labels', icon:ICONS.beforeafter,
+      accept:'image/*,.heic,.heif', dropText:'Drop the before and after photos, or click to choose', dropSub:'Pick both at once; you can swap them next',
+      options(host){
+        orderList(host, 'Order (first is “before”)', `<div class="field-row"><div class="field"><label for="ba-layout">Layout</label><select id="ba-layout"><option value="side">Side by side</option><option value="stack">One above the other</option></select></div>
+          <div class="field"><label for="ba-size">Size</label><select id="ba-size"><option value="auto">Fit the layout</option><option value="square">Square 2048 × 2048</option><option value="portrait">Instagram portrait 1080 × 1350</option><option value="wide">Wide 1920 × 1080</option></select></div></div>
+          <div class="field-row"><div class="field"><label for="ba-l1">First label</label><input type="text" id="ba-l1" value="Before" maxlength="24"/></div><div class="field"><label for="ba-l2">Second label</label><input type="text" id="ba-l2" value="After" maxlength="24"/></div></div>
+          <label class="opt-check"><input type="checkbox" id="ba-labels" checked/> Show the labels</label>
+          <label class="opt-check"><input type="checkbox" id="ba-gap" checked/> White line between the photos</label>`
+          + (selectedFiles.length !== 2 ? `<p class="err" style="margin:8px 0">Choose exactly two photos. Click “Change file” and pick both together.</p>` : ''));
+        setTimeout(() => { $('go').disabled = selectedFiles.length !== 2; }, 0);
+      },
+      async runAll(files){
+        const out = await beforeAfter(files, { layout:$('ba-layout').value, size:$('ba-size').value, gap:$('ba-gap').checked, labels: $('ba-labels').checked ? [$('ba-l1').value || 'Before', $('ba-l2').value || 'After'] : null });
+        const blob = await encodeCanvas(out.canvas, 'image/jpeg', 0.92);
+        return { blob, name:'before-and-after.jpg', mime:'image/jpeg', compare:false, note:`${out.W} × ${out.H} px. Each photo is trimmed evenly to fill its half.` };
       },
     },
     'checkup-fix': {
@@ -1818,6 +2074,11 @@
     'video-mute':'/mute-video/',
     'video-speed':'/change-video-speed/',
     'audio-level':'/even-out-audio-volume/',
+    'image-text':'/add-text-to-image/',
+    'profile-picture':'/profile-picture-maker/',
+    'favicon':'/favicon-generator/',
+    'gif-mp4':'/gif-to-mp4/',
+    'before-after':'/before-and-after-photo/',
     'video-vertical':'/resize-video-for-reels/',
     'video-subtitles':'/add-subtitles-to-video/',
     'audio-denoise':'/remove-background-noise/',
@@ -1929,7 +2190,7 @@
     $('r-size').textContent = files.length > 1 ? `${fmtSize(totalBytes)} total · processed one at a time` : fmtSize(files[0].size);
     $('go').textContent = current.combine ? `${current.name} (${files.length})` : files.length > 1 ? `${current.name} — ${files.length} ${noun}` : current.name;
     $('go').disabled = true; show('s-ready');
-    try { await current.options($('opts'), files[0]); $('go').disabled = false; }
+    try { await current.options($('opts'), files[0]); $('go').disabled = !!(current.canGo && !current.canGo(files)); }
     catch (error) { showErr("Couldn't open this file", 'Try a standard JPG, PNG, WebP, HEIC, MP4 or MOV file.'); console.error(error); }
     const warn = $('ready-warn');
     warn.innerHTML = files.some(file => file.size > lim.softMB * 1048576)
@@ -2180,7 +2441,7 @@
 
   /* ---------- next steps after a result ---------- */
   const NEXT_STEPS = {
-    image: [['blur-faces','Blur faces & plates'],['image-collage','Make a collage'],['strip-metadata','Remove location & camera data'],['image-to-size','Compress to a size'],['image-resize','Resize it for a site'],['image-watermark','Add a watermark'],['image-convert','Change the format']],
+    image: [['blur-faces','Blur faces & plates'],['image-text','Add text'],['image-collage','Make a collage'],['strip-metadata','Remove location & camera data'],['image-to-size','Compress to a size'],['image-resize','Resize it for a site'],['image-watermark','Add a watermark'],['image-convert','Change the format']],
     video: [['video-captions','Add captions'],['video-vertical','Make it 9:16 for Reels'],['audio-denoise','Reduce background noise'],['video-compress','Compress it'],['video-trim','Trim it'],['audio-level','Even out the volume'],['video-gif','Make a GIF'],['video-mute','Remove the sound'],['strip-metadata','Remove location data']],
   };
   function renderNextSteps(outputs) {
