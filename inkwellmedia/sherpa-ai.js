@@ -9,21 +9,21 @@ export const PROVIDERS = {
     label: 'Google Gemini',
     keyUrl: 'https://aistudio.google.com/app/apikey',
     keyHint: 'Free key from Google AI Studio. Starts with "AIza".',
-    note: 'Google offers a free tier. On the free tier, Google may use what you send to improve its products.',
+    note: 'On the free tier, Google may use what you send to improve its products.',
     fallback: 'gemini-2.5-flash',
   },
   anthropic: {
     label: 'Anthropic Claude',
     keyUrl: 'https://console.anthropic.com/settings/keys',
     keyHint: 'Key from the Anthropic Console. Starts with "sk-ant-". Paid per use.',
-    note: 'Billed to your Anthropic account, usually a fraction of a cent per question.',
+    note: 'Paid per use from your Anthropic credit, usually a fraction of a cent a question.',
     fallback: 'claude-haiku-4-5',
   },
   openai: {
     label: 'OpenAI',
     keyUrl: 'https://platform.openai.com/api-keys',
     keyHint: 'Key from the OpenAI platform. Starts with "sk-". Paid per use.',
-    note: 'Billed to your OpenAI account, usually a fraction of a cent per question.',
+    note: 'Paid per use from your OpenAI credit, usually a fraction of a cent a question.',
     fallback: 'gpt-4o-mini',
   },
 };
@@ -145,39 +145,36 @@ export async function testKey(provider, key) {
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// The "Your AI key" settings box. onChange is called after a key is saved or forgotten.
+// The AI key settings box. onChange is called after a key is saved or forgotten.
 export function mountKeyBox(el, { onChange } = {}) {
-  const draw = () => {
+  const draw = (msg = '') => {
     const s = getSettings();
     const p = s.provider || 'gemini';
     const key = (s.keys || {})[p] || '';
     const P = PROVIDERS[p];
     el.innerHTML = `
       <div class="sherpa-keybox">
-        <p class="sherpa-small">Sherpa's AI answers come from your own AI account, so Inkwell never sees your data and it stays free. Your key is saved only in this browser.</p>
-        <label class="sherpa-field"><span>AI provider</span>
-          <select data-k="provider">${Object.entries(PROVIDERS).map(([id, x]) => `<option value="${id}"${id === p ? ' selected' : ''}>${esc(x.label)}${id === 'gemini' ? ' (free key)' : ''}</option>`).join('')}</select></label>
-        <label class="sherpa-field"><span>Your key</span>
-          <input type="password" data-k="key" autocomplete="off" spellcheck="false" placeholder="Paste your key" value="${esc(key)}"></label>
-        <p class="sherpa-small">${esc(P.keyHint)} <a href="${P.keyUrl}" target="_blank" rel="noopener">Get a key →</a></p>
-        <p class="sherpa-small sherpa-muted">${esc(P.note)}</p>
-        <div class="sherpa-row">
-          <button type="button" class="sherpa-btn sherpa-btn-primary" data-k="save">Save and test</button>
-          ${key ? '<button type="button" class="sherpa-btn" data-k="forget">Forget my key</button>' : ''}
-          <span class="sherpa-status" data-k="status" aria-live="polite">${key ? `✓ Key saved${s.models?.[p]?.id ? ` · using ${esc(s.models[p].id)}` : ''}` : ''}</span>
+        <div class="sherpa-keyrow">
+          <select data-k="provider" aria-label="AI provider">${Object.entries(PROVIDERS).map(([id, x]) => `<option value="${id}"${id === p ? ' selected' : ''}>${esc(x.label)}${id === 'gemini' ? ' (free)' : ''}</option>`).join('')}</select>
+          <input type="password" data-k="key" autocomplete="off" spellcheck="false" aria-label="Your API key" placeholder="Paste your API key" value="${esc(key)}">
+          <button type="button" class="sherpa-btn sherpa-btn-primary" data-k="save">${key ? 'Saved ✓' : 'Save'}</button>
         </div>
+        <p class="sherpa-small sherpa-muted"><a href="${P.keyUrl}" target="_blank" rel="noopener">Get a ${p === 'gemini' ? 'free ' : ''}key →</a> · Kept only in this browser${key ? ' · <button type="button" class="sherpa-link" data-k="forget">Forget it</button>' : ''}</p>
+        <p class="sherpa-small sherpa-muted sherpa-fine">${esc(P.note)}</p>
+        <p class="sherpa-status" data-k="status" aria-live="polite">${esc(msg)}</p>
       </div>`;
     el.querySelector('[data-k=provider]').addEventListener('change', (e) => { const n = getSettings(); n.provider = e.target.value; saveSettings(n); draw(); onChange && onChange(); });
+    el.querySelector('[data-k=key]').addEventListener('input', () => { el.querySelector('[data-k=save]').textContent = 'Save'; });
     el.querySelector('[data-k=save]').addEventListener('click', async (e) => {
       const st = el.querySelector('[data-k=status]');
       const k = el.querySelector('[data-k=key]').value.trim();
       if (!k) { st.textContent = 'Paste your key first.'; return; }
       const n = getSettings(); n.keys = { ...(n.keys || {}), [p]: k }; saveSettings(n);
-      e.target.disabled = true; st.textContent = 'Testing…';
-      try { const m = await testKey(p, k); st.textContent = `✓ Works · using ${m}`; setTimeout(() => { draw(); onChange && onChange(); }, 900); }
-      catch (err) { st.textContent = err.message; const n2 = getSettings(); delete n2.keys[p]; saveSettings(n2); e.target.disabled = false; }
+      e.target.disabled = true; st.textContent = 'Checking the key…';
+      try { const m = await testKey(p, k); draw(`✓ Sherpa AI is on (${m}).`); onChange && onChange(); }
+      catch (err) { const n2 = getSettings(); delete n2.keys[p]; saveSettings(n2); draw(err.message); }
     });
-    el.querySelector('[data-k=forget]')?.addEventListener('click', () => { const n = getSettings(); delete n.keys[p]; if (n.models) delete n.models[p]; saveSettings(n); draw(); onChange && onChange(); });
+    el.querySelector('[data-k=forget]')?.addEventListener('click', () => { const n = getSettings(); delete n.keys[p]; if (n.models) delete n.models[p]; saveSettings(n); draw('Key removed from this browser.'); onChange && onChange(); });
   };
   draw();
   return { redraw: draw };

@@ -1,7 +1,7 @@
 // Inkwell Media service worker — makes the Media tools work offline after a first visit.
 // Scope is "/" (tool pages live at the site root), so it ONLY handles Media URLs and leaves
 // everything else on inkwelltools.com (hub, /data, /VINLookup, guides) alone.
-const VERSION = 'v7-2026-11-17';
+const VERSION = 'v7b-2026-11-17';
 const SHELL = 'inkwell-media-shell-' + VERSION;
 const ENGINE = 'inkwell-media-engine-v2';
 const RUNTIME = 'inkwell-media-runtime-v1';

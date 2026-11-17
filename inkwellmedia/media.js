@@ -2837,14 +2837,20 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
   /* ---------- Sherpa (round 16): where is it going? + optional AI with the visitor's own key ---------- */
   const SH_KEY = 'inkwellMedia.sherpaDest';
   let shDest = ''; try { shDest = localStorage.getItem(SH_KEY) || ''; } catch (_) {}
+  const SH_MAIN = ['email', 'ig-post', 'reels', 'etsy', 'website', 'print'];
   function sherpaHtml() {
-    return `<div class="sherpa-m" id="sh-m"><div class="sherpa-m-head"><span class="checkup-kicker">Sherpa</span><h3>Where is it going?</h3><p>Pick where you'll send or post it and Sherpa tells you what to change first.</p></div>
-      <div class="sherpa-dests" role="group" aria-label="Where is it going">${SHERPA_DESTS.map(([id, label]) => `<button type="button" class="sherpa-dest" data-dest="${id}" aria-pressed="${id === shDest}">${label}</button>`).join('')}</div>
-      <div id="sh-plan" aria-live="polite"></div><div id="sh-ask"></div></div>`;
+    const chip = ([id, label]) => `<button type="button" class="sherpa-dest" data-dest="${id}" aria-pressed="${id === shDest}">${label}</button>`;
+    const main = SHERPA_DESTS.filter(d => SH_MAIN.includes(d[0])), rest = SHERPA_DESTS.filter(d => !SH_MAIN.includes(d[0]));
+    const restOpen = rest.some(d => d[0] === shDest);
+    return `<div class="sherpa-m" id="sh-m"><div class="sherpa-m-head"><span class="checkup-kicker">Sherpa</span><h3>Where is it going?</h3></div>
+      <div class="sherpa-dests" role="group" aria-label="Where is it going">${main.map(chip).join('')}${restOpen ? '' : '<button type="button" class="sherpa-dest sherpa-more" id="sh-more">More…</button>'}<span id="sh-rest" class="${restOpen ? '' : 'hidden'}" style="display:${restOpen ? 'contents' : ''}">${rest.map(chip).join('')}</span></div>
+      <div id="sh-plan" aria-live="polite"></div>
+      <button type="button" class="sherpa-link sherpa-open-ai" id="sh-ai-open">Or describe it to Sherpa AI</button>
+      <div id="sh-ask" class="hidden"></div></div>`;
   }
   function drawSherpaPlan() {
     const slot = $('sh-plan'); if (!slot) return;
-    document.querySelectorAll('.sherpa-dest').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.dest === shDest)));
+    document.querySelectorAll('.sherpa-dest[data-dest]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.dest === shDest)));
     if (!shDest) { slot.innerHTML = ''; return; }
     const entries = ckEntries.filter(e => e.meta);
     slot.innerHTML = entries.map((e, ei) => {
@@ -2859,7 +2865,9 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     catch (_) { if (btn) { btn.disabled = false; btn.textContent = 'Couldn’t pass it along. Open the tool and add the file there.'; } }
   }
   function wireSherpa() {
-    document.querySelectorAll('.sherpa-dest').forEach(b => b.addEventListener('click', () => {
+    $('sh-more')?.addEventListener('click', (e) => { const r = $('sh-rest'); r.classList.remove('hidden'); r.style.display = 'contents'; e.target.remove(); });
+    $('sh-ai-open').addEventListener('click', (e) => { $('sh-ask').classList.remove('hidden'); e.target.remove(); $('sh-ask').querySelector('.sherpa-q')?.focus(); });
+    document.querySelectorAll('.sherpa-dest[data-dest]').forEach(b => b.addEventListener('click', () => {
       shDest = shDest === b.dataset.dest ? '' : b.dataset.dest;
       try { localStorage.setItem(SH_KEY, shDest); } catch (_) {}
       drawSherpaPlan();

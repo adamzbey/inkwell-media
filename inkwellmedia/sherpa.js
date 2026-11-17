@@ -96,7 +96,7 @@ export function planFor(dest, m) {
       break;
     case 'etsy':
       if (img) add('Etsy thumbnails are square-ish and zoom needs at least 2000 px. Resize for Etsy keeps it sharp.', '/resize-image-for-etsy/', 'Resize for Etsy');
-      if (vid && m.duration > 15) add(`Etsy listing videos must be 5 to 15 seconds, and this is ${Math.round(m.duration)}.`, '/trim-video/', 'Trim to 15 s', true);
+      if (vid && m.duration > 15) add(`Etsy listing videos must be 5 to 15 seconds, and this is ${Math.round(m.duration)} seconds.`, '/trim-video/', 'Trim to 15 s', true);
       if (vid) add('Etsy plays listing videos without sound.', '/mute-video/', 'Remove the sound');
       if (img) add('A clean white background often looks more professional.', '/remove-background/', 'Remove background');
       break;
@@ -149,39 +149,41 @@ export function buildRequest(metas, ask) {
 export function mountMediaAsk(el, { getMetas, open }) {
   el.innerHTML = `
     <div class="sherpa-ask">
-      <label class="sherpa-field"><span>Or tell Sherpa what you're trying to do</span>
-        <textarea rows="2" class="sherpa-q" placeholder="e.g. Post this on my bakery's Etsy listing and my Instagram"></textarea></label>
-      <div class="sherpa-row"><button type="button" class="sherpa-btn sherpa-btn-primary" data-a="ask">Ask Sherpa AI</button><button type="button" class="sherpa-link" data-a="peek">See exactly what's sent</button></div>
-      <p class="sherpa-small sherpa-muted">Sherpa AI uses your own AI key, so it's free for Inkwell and your photos and videos are never sent anywhere: only their type, size and length.</p>
-      <pre class="sherpa-peek hidden"></pre>
-      <details class="sherpa-keys"><summary></summary><div class="sherpa-keyhost"></div></details>
+      <form class="sherpa-bar" autocomplete="off">
+        <input type="text" class="sherpa-q" aria-label="What are you trying to do?" placeholder="e.g. Post this on my Etsy listing and Instagram">
+        <button type="submit" class="sherpa-btn sherpa-btn-primary" data-a="ask">Ask</button>
+      </form>
       <div class="sherpa-out" aria-live="polite"></div>
+      <p class="sherpa-small sherpa-muted"><span class="sherpa-mode"></span> <button type="button" class="sherpa-link" data-a="settings"></button> · <button type="button" class="sherpa-link" data-a="peek">What's sent?</button></p>
+      <pre class="sherpa-peek hidden"></pre>
+      <div class="sherpa-settings hidden"><div class="sherpa-keyhost"></div></div>
     </div>`;
-  const q = el.querySelector('.sherpa-q'), out = el.querySelector('.sherpa-out'), keys = el.querySelector('.sherpa-keys');
-  const label = () => { keys.querySelector('summary').textContent = hasKey() ? `Your AI key (${PROVIDERS[getSettings().provider]?.label || ''})` : 'Add your AI key to turn on Sherpa AI (free with Google Gemini)'; };
-  label();
-  mountKeyBox(el.querySelector('.sherpa-keyhost'), { onChange: () => { label(); if (hasKey()) keys.open = false; } });
-  el.querySelector('[data-a=peek]').addEventListener('click', () => { const pre = el.querySelector('.sherpa-peek'); pre.textContent = buildRequest(getMetas(), q.value.trim() || '(your request)').user; pre.classList.toggle('hidden'); });
-  q.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ask(); } });
-  el.querySelector('[data-a=ask]').addEventListener('click', ask);
+  const q = el.querySelector('.sherpa-q'), out = el.querySelector('.sherpa-out'), settings = el.querySelector('.sherpa-settings');
+  const mode = () => {
+    el.querySelector('.sherpa-mode').textContent = hasKey() ? `Uses your ${PROVIDERS[getSettings().provider]?.label || ''} key.` : 'Needs your own AI key (Google\'s is free).';
+    el.querySelector('[data-a=settings]').textContent = hasKey() ? 'AI settings' : 'Add a key';
+  };
+  mode();
+  mountKeyBox(el.querySelector('.sherpa-keyhost'), { onChange: () => { mode(); if (hasKey()) settings.classList.add('hidden'); } });
+  el.querySelector('[data-a=settings]').addEventListener('click', () => settings.classList.toggle('hidden'));
+  el.querySelector('[data-a=peek]').addEventListener('click', () => { const pre = el.querySelector('.sherpa-peek'); pre.textContent = `Only file details are sent, never the file:\n\n${buildRequest(getMetas(), q.value.trim() || '(your request)').user}`; pre.classList.toggle('hidden'); });
+  el.querySelector('.sherpa-bar').addEventListener('submit', (e) => { e.preventDefault(); ask(); });
   async function ask() {
     const text = q.value.trim();
-    if (!text) { q.focus(); out.innerHTML = '<p class="sherpa-small">Tell Sherpa what you want to do first.</p>'; return; }
-    if (!hasKey()) { keys.open = true; out.innerHTML = '<p class="sherpa-small">Add your AI key first. A Google Gemini key is free.</p>'; return; }
+    if (!text) { q.focus(); return; }
+    if (!hasKey()) { settings.classList.remove('hidden'); out.innerHTML = '<p class="sherpa-small">Add your AI key first. A Google Gemini key is free.</p>'; return; }
     const btn = el.querySelector('[data-a=ask]'); btn.disabled = true;
     out.innerHTML = '<p class="sherpa-small sherpa-muted">Sherpa is thinking…</p>';
     try {
-      const req = buildRequest(getMetas(), text);
-      const { data, model } = await askJSON(req);
+      const { data, model } = await askJSON(buildRequest(getMetas(), text));
       const steps = (Array.isArray(data.steps) ? data.steps : []).filter((s) => s && CATALOG[s.path]).slice(0, 4);
       out.innerHTML = `<div class="sherpa-answer"><p class="sherpa-reply">${esc(String(data.reply || 'Here is a plan.').slice(0, 600))}</p>
-        ${steps.length ? `<ol class="sherpa-plan">${steps.map((s, k) => `<li><span>${esc(String(s.why || CATALOG[s.path]).slice(0, 160))}</span><button type="button" class="next-btn" data-open="${esc(s.path)}">${k === 0 ? 'Start here' : 'Open'}: ${esc(CATALOG[s.path].split(' (')[0])} →</button></li>`).join('')}</ol>
-        <p class="sherpa-small sherpa-muted">Do the steps in order: each tool hands its result to the next with "Keep going with this file".</p>` : ''}
-        <p class="sherpa-small sherpa-muted">Answered by ${esc(model)} with your key. AI can be wrong, so check the result.</p></div>`;
+        ${steps.length ? `<ol class="sherpa-plan">${steps.map((s, k) => `<li><span>${esc(String(s.why || CATALOG[s.path]).slice(0, 160))}</span><button type="button" class="next-btn" data-open="${esc(s.path)}">${k === 0 ? 'Start here' : 'Then'}: ${esc(CATALOG[s.path].split(' (')[0])} →</button></li>`).join('')}</ol>` : ''}
+        <p class="sherpa-small sherpa-muted">By ${esc(model)} with your key. AI can be wrong.</p></div>`;
       out.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => { b.disabled = true; open(b.dataset.open); }));
     } catch (e) {
       out.innerHTML = `<p class="sherpa-err">${esc(e.message || String(e))}</p>`;
-      if (e.kind === 'key') keys.open = true;
+      if (e.kind === 'key') settings.classList.remove('hidden');
     } finally { btn.disabled = false; }
   }
 }
