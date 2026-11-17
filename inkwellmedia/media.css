@@ -274,3 +274,23 @@
   body[data-tool] #media-shell { min-height:470px; }
   body:not([data-tool]) #media-shell { min-height:2100px; }
   @media (max-width:600px) { body[data-tool] #media-shell { min-height:550px; } body:not([data-tool]) #media-shell { min-height:3350px; } }
+
+  /* round 15: settings row, share, paste hint, shared-files picker */
+  .settings-row { display:flex; flex-wrap:wrap; justify-content:center; gap:6px 8px; margin:2px 0 6px; font-size:13px; color:var(--muted); }
+  .linkbtn { background:none; border:none; padding:0; color:var(--muted); font:inherit; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+  .linkbtn:hover { color:var(--paper); }
+  .set-msg { color:var(--good); }
+  .paste-hint { margin:10px 0 0; font-size:12.5px; color:var(--muted); text-align:center; }
+  .paste-hint kbd { font:inherit; border:1px solid var(--brass-line); border-radius:5px; padding:0 5px; }
+  .drop-overlay { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; background:rgba(20,16,25,.82); border:3px dashed var(--brass); color:var(--paper); font-family:'Fraunces',serif; font-size:24px; }
+  .drop-overlay.on { display:flex; }
+  .shared-box { border:1px solid var(--brass-line); background:var(--brass-soft); border-radius:var(--radius); padding:18px; margin:0 0 22px; }
+  .shared-box h2 { font-family:'Fraunces',serif; font-weight:500; font-size:20px; margin:0 0 6px; }
+  .shared-box p { margin:0 0 12px; color:var(--muted); font-size:14px; }
+  .shared-box .next-grid { margin-top:6px; }
+  .palette-swatches { display:grid; grid-template-columns:repeat(auto-fill,minmax(92px,1fr)); gap:8px; margin:12px 0; }
+  .palette-swatches button { border:1px solid var(--brass-line); border-radius:10px; padding:0; overflow:hidden; background:var(--ink-2); color:var(--paper); cursor:pointer; font:inherit; font-size:12.5px; }
+  .palette-swatches button span { display:block; height:46px; }
+  .palette-swatches button b { display:block; padding:6px 4px; font-weight:500; font-variant-numeric:tabular-nums; }
+  .live-preview { width:100%; border-radius:12px; margin:6px 0 14px; display:block; background:repeating-conic-gradient(#2a2140 0 25%, #1e1830 0 50%) 50%/20px 20px; }
+  .eta { margin-left:6px; }

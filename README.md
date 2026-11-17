@@ -33,3 +33,4 @@ Third-party software is used unmodified, under its own licence:
 | face-api with TensorFlow.js | MIT, Apache-2.0 | https://github.com/vladmandic/face-api |
 | Transformers.js | Apache-2.0 | https://github.com/huggingface/transformers.js |
 | Whisper speech model | MIT | https://github.com/openai/whisper |
+| qrcode-generator | MIT | https://github.com/kazuhikoarase/qrcode-generator |

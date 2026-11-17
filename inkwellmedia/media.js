@@ -1377,6 +1377,11 @@
     vertical: '<rect x="7" y="2" width="10" height="20" rx="2"/><path d="m10 9 4 3-4 3z"/>',
     subs: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 15h5M13 15h5M6 11h12"/>',
     denoise: '<path d="M2 12h2l2-6 3 12 3-9 2 5h2"/><path d="M19 8l3 8M22 8l-3 8"/>',
+    screenshot: '<rect x="2" y="3" width="20" height="18" rx="3"/><rect x="5" y="8" width="14" height="10" rx="1.5"/><circle cx="5" cy="5.5" r=".6" fill="currentColor"/><circle cx="7.2" cy="5.5" r=".6" fill="currentColor"/>',
+    palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4.2-4-7.6-9-7.6z"/><circle cx="7.5" cy="11" r="1.2" fill="currentColor"/><circle cx="10" cy="7" r="1.2" fill="currentColor"/><circle cx="15" cy="7.5" r="1.2" fill="currentColor"/>',
+    qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
+    ringtone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/><path d="M15 3a6 6 0 0 1 6 6M15 7a2 2 0 0 1 2 2"/>',
+    audiogram: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 12v0M8.5 9.5v5M11 8v8M13.5 10v4M16 9v6M18.5 11.5v1"/>',
     record: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor"/>',
     collage: '<rect x="3" y="3" width="8" height="10" rx="1"/><rect x="13" y="3" width="8" height="6" rx="1"/><rect x="13" y="11" width="8" height="10" rx="1"/><rect x="3" y="15" width="8" height="6" rx="1"/>',
     text: '<path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/>',
@@ -1410,6 +1415,10 @@
     'image-collage': { note:'All the photos are held in memory together, so very large photos may need a computer.', softMB:40, hardMB:150 },
     'video-subtitles': { note:'Short clips work best. The whole video is re-encoded with the words drawn in; a desktop is recommended.', softMB:100, hardMB:350 },
     'video-mute': { note:'The picture is copied without re-encoding, so even large clips are quick.', softMB:200, hardMB:1024 },
+    'ringtone': { note:'Only the part you pick is kept, so long songs are fine.', softMB:150, hardMB:600 },
+    'audiogram': { note:'Only the clip you pick is used. Each second of video is drawn on your device, so keep it short.', softMB:150, hardMB:600 },
+    'screenshot': { note:'Very large screenshots are fine on a computer.', softMB:40, hardMB:200 },
+    'palette': { note:'The picture is shrunk before the colours are worked out, so any size is quick.', softMB:40, hardMB:200 },
   };
   function limitsFor(id){
     if (LIMITS_BY_ID[id]) return LIMITS_BY_ID[id];
@@ -1422,6 +1431,272 @@
     if (eng === 'speech') return { note:'First use downloads a speech model (40–80 MB), cached afterwards. Longer recordings take longer; a computer is faster than a phone.', softMB:100, hardMB:500 };
     if (eng === 'background') return { note:'First use downloads a background model (~40 MB), cached for later and offline use.', softMB:20, hardMB:60 };
     return { note:'Large, high-resolution photos need more memory.', softMB:40, hardMB:150 };
+  }
+
+  /* ---------- round 15: screenshot beautifier ---------- */
+  const SHOT_BGS = {
+    sunset: ['Sunset', ['#ff9a8b', '#ff6a88', '#ff99ac']],
+    ocean: ['Ocean', ['#2b5876', '#4e4376']],
+    ink: ['Ink & gold', ['#141019', '#3a2c55', '#cca24e']],
+    mint: ['Mint', ['#a8edea', '#7ed6c4']],
+    peach: ['Peach', ['#ffecd2', '#fcb69f']],
+    sky: ['Sky', ['#89f7fe', '#66a6ff']],
+    white: ['Plain white', ['#ffffff']],
+    custom: ['My colour', null],
+  };
+  const SHOT_SIZES = { auto: ['Fit the screenshot', 0, 0], x: ['X / Twitter post 1600 × 900', 1600, 900], li: ['LinkedIn post 1200 × 627', 1200, 627], sq: ['Square 1080 × 1080', 1080, 1080], ig: ['Instagram portrait 1080 × 1350', 1080, 1350] };
+  function roundRectPath(ctx, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function paintBackground(ctx, W, H, key, custom) {
+    const stops = key === 'custom' ? [custom || '#cca24e'] : SHOT_BGS[key][1];
+    if (stops.length === 1) { ctx.fillStyle = stops[0]; ctx.fillRect(0, 0, W, H); return; }
+    const g = ctx.createLinearGradient(0, 0, W, H);
+    stops.forEach((c, i) => g.addColorStop(i / (stops.length - 1), c));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  // Draws the screenshot (with an optional window or phone frame) on a background. scale < 1 is used for the live preview.
+  function drawShot(img, o, scale = 1) {
+    const iw = img.width, ih = img.height;
+    const radius = { none: 0, small: 0.012, large: 0.03 }[o.radius] ?? 0.012;
+    let fw = iw, fh = ih, top = 0, side = 0;
+    if (o.frame === 'light' || o.frame === 'dark') { top = Math.max(26, Math.round(iw * 0.032)); fh = ih + top; }
+    if (o.frame === 'phone') { side = Math.round(Math.max(iw, ih) * 0.035); fw = iw + side * 2; fh = ih + side * 2; }
+    const padF = { s: 0.05, m: 0.09, l: 0.15 }[o.pad] ?? 0.09;
+    const size = SHOT_SIZES[o.size] || SHOT_SIZES.auto;
+    let W, H, k;
+    if (!size[1]) { const p = Math.round(Math.max(fw, fh) * padF); W = fw + p * 2; H = fh + p * 2; k = 1; }
+    else { W = size[1]; H = size[2]; const p = Math.round(Math.min(W, H) * padF); k = Math.min((W - p * 2) / fw, (H - p * 2) / fh); }
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(W * scale)); c.height = Math.max(1, Math.round(H * scale));
+    const ctx = c.getContext('2d'); ctx.scale(scale, scale);
+    paintBackground(ctx, W, H, o.bg, o.color);
+    const dw = fw * k, dh = fh * k, x = (W - dw) / 2, y = (H - dh) / 2;
+    const r = (o.frame === 'phone' ? 0.08 : radius) * Math.max(dw, dh) * (o.frame === 'phone' ? 0.6 : 1);
+    if (o.shadow) {
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = Math.max(dw, dh) * 0.04; ctx.shadowOffsetY = Math.max(dw, dh) * 0.015;
+      roundRectPath(ctx, x, y, dw, dh, r); ctx.fillStyle = o.frame === 'dark' || o.frame === 'phone' ? '#1c1c1e' : '#ffffff'; ctx.fill(); ctx.restore();
+    }
+    ctx.save(); roundRectPath(ctx, x, y, dw, dh, r); ctx.clip();
+    if (o.frame === 'light' || o.frame === 'dark') {
+      const th = top * k;
+      ctx.fillStyle = o.frame === 'dark' ? '#2b2b2f' : '#ececef'; ctx.fillRect(x, y, dw, th);
+      ['#ff5f57', '#febc2e', '#28c840'].forEach((col, i) => { ctx.beginPath(); ctx.arc(x + th * (0.62 + i * 0.62), y + th / 2, th * 0.17, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill(); });
+      ctx.fillStyle = o.frame === 'dark' ? '#3a3a40' : '#ffffff';
+      roundRectPath(ctx, x + dw * 0.3, y + th * 0.22, dw * 0.4, th * 0.56, th * 0.2); ctx.fill();
+      ctx.drawImage(img, x, y + th, dw, dh - th);
+    } else if (o.frame === 'phone') {
+      ctx.fillStyle = '#111114'; ctx.fillRect(x, y, dw, dh);
+      const s = side * k, ir = r * 0.7;
+      ctx.save(); roundRectPath(ctx, x + s, y + s, dw - s * 2, dh - s * 2, ir); ctx.clip(); ctx.drawImage(img, x + s, y + s, dw - s * 2, dh - s * 2); ctx.restore();
+    } else {
+      ctx.drawImage(img, x, y, dw, dh);
+    }
+    ctx.restore();
+    return { canvas: c, W, H };
+  }
+  let shotState = null;
+  async function setupShot(host, file) {
+    if (shotState && shotState.image && shotState.image.close) shotState.image.close();
+    const image = await loadImage(file);
+    shotState = { image };
+    const sel = (id, label, entries, def) => `<div class="field"><label for="${id}">${label}</label><select id="${id}">${entries.map(([v, n]) => `<option value="${v}"${v === def ? ' selected' : ''}>${n}</option>`).join('')}</select></div>`;
+    host.innerHTML = `<canvas class="live-preview" id="sh-prev" aria-label="Preview"></canvas>
+      <div class="field-row">${sel('sh-bg', 'Background', Object.entries(SHOT_BGS).map(([k, v]) => [k, v[0]]), 'ink')}<div class="field"><label for="sh-color">My colour</label><input type="color" id="sh-color" value="#cca24e"/></div></div>
+      <div class="field-row">${sel('sh-frame', 'Frame', [['none', 'No frame'], ['light', 'Browser window (light)'], ['dark', 'Browser window (dark)'], ['phone', 'Phone']], 'light')}${sel('sh-size', 'Size', Object.entries(SHOT_SIZES).map(([k, v]) => [k, v[0]]), 'auto')}</div>
+      <div class="field-row">${sel('sh-pad', 'Space around it', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']], 'm')}${sel('sh-radius', 'Corners', [['none', 'Square'], ['small', 'Slightly rounded'], ['large', 'Rounded']], 'small')}</div>
+      <label class="opt-check"><input type="checkbox" id="sh-shadow" checked/> Soft shadow</label>`;
+    const draw = () => {
+      if (!shotState) return;
+      const prev = $('sh-prev'); if (!prev) return;
+      const o = readShotOpts();
+      const full = drawShot(shotState.image, o, 1e-6); // size only
+      const scale = Math.min(1, 560 / full.W);
+      const out = drawShot(shotState.image, o, scale);
+      prev.width = out.canvas.width; prev.height = out.canvas.height; prev.getContext('2d').drawImage(out.canvas, 0, 0);
+    };
+    host.querySelectorAll('select,input').forEach((el) => el.addEventListener('input', draw));
+    host.querySelectorAll('select,input').forEach((el) => el.addEventListener('change', draw));
+    draw();
+  }
+  const readShotOpts = () => ({ bg: $('sh-bg').value, color: $('sh-color').value, frame: $('sh-frame').value, size: $('sh-size').value, pad: $('sh-pad').value, radius: $('sh-radius').value, shadow: $('sh-shadow').checked });
+
+  /* ---------- round 15: colour palette from a photo (median cut) ---------- */
+  function medianCut(pixels, n) {
+    let boxes = [pixels];
+    const range = (box, ch) => { let lo = 255, hi = 0; for (const p of box) { if (p[ch] < lo) lo = p[ch]; if (p[ch] > hi) hi = p[ch]; } return hi - lo; };
+    while (boxes.length < n) {
+      let bi = -1, best = -1, bch = 0;
+      boxes.forEach((b, i) => { if (b.length < 2) return; for (let ch = 0; ch < 3; ch++) { const r = range(b, ch) * Math.sqrt(b.length); if (r > best) { best = r; bi = i; bch = ch; } } });
+      if (bi < 0 || best <= 0) break;
+      const b = boxes[bi].slice().sort((p, q) => p[bch] - q[bch]); const mid = b.length >> 1;
+      boxes.splice(bi, 1, b.slice(0, mid), b.slice(mid));
+    }
+    const total = pixels.length || 1;
+    return boxes.filter((b) => b.length).map((b) => {
+      let r = 0, g = 0, bl = 0; for (const p of b) { r += p[0]; g += p[1]; bl += p[2]; }
+      return { rgb: [Math.round(r / b.length), Math.round(g / b.length), Math.round(bl / b.length)], share: b.length / total };
+    });
+  }
+  const hex2 = (n) => n.toString(16).padStart(2, '0');
+  const rgbHex = ([r, g, b]) => '#' + hex2(r) + hex2(g) + hex2(b);
+  const lum = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  async function extractPalette(file, n, order) {
+    const img = await loadImage(file);
+    const s = Math.min(1, 160 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.width * s)); c.height = Math.max(1, Math.round(img.height * s));
+    const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, c.width, c.height); if (img.close) img.close();
+    const d = ctx.getImageData(0, 0, c.width, c.height).data; const px = [];
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 128) px.push([d[i], d[i + 1], d[i + 2]]);
+    let cols = medianCut(px, n * 2);
+    // merge colours that look the same, keep the n most used
+    const merged = [];
+    for (const col of cols.sort((a, b) => b.share - a.share)) {
+      const near = merged.find((m) => Math.hypot(m.rgb[0] - col.rgb[0], m.rgb[1] - col.rgb[1], m.rgb[2] - col.rgb[2]) < 26);
+      if (near) near.share += col.share; else merged.push({ ...col });
+    }
+    cols = merged.slice(0, n);
+    if (order === 'light') cols.sort((a, b) => lum(b.rgb) - lum(a.rgb));
+    else cols.sort((a, b) => b.share - a.share);
+    return cols.map((c) => ({ hex: rgbHex(c.rgb), rgb: c.rgb, pct: Math.round(c.share * 100) }));
+  }
+  async function paletteCard(file, cols) {
+    const img = await loadImage(file);
+    const W = 1200, thumbH = Math.round(Math.min(700, W * img.height / img.width)), sw = 220;
+    const c = document.createElement('canvas'); c.width = W; c.height = thumbH + sw + 60;
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
+    const k = Math.max(W / img.width, thumbH / img.height); const dw = img.width * k, dh = img.height * k;
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, thumbH); ctx.clip(); ctx.drawImage(img, (W - dw) / 2, (thumbH - dh) / 2, dw, dh); ctx.restore(); if (img.close) img.close();
+    const cw = W / cols.length;
+    cols.forEach((col, i) => {
+      ctx.fillStyle = col.hex; ctx.fillRect(i * cw, thumbH, Math.ceil(cw), sw);
+      ctx.fillStyle = '#141019'; ctx.font = '600 26px Inter, system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(col.hex.toUpperCase(), i * cw + cw / 2, thumbH + sw + 40);
+    });
+    return c;
+  }
+  let paletteCols = [];
+
+  /* ---------- round 15: QR codes (qrcode-generator, MIT) ---------- */
+  let qrLib = null;
+  function ensureQr() {
+    if (window.qrcode) return Promise.resolve(window.qrcode);
+    if (!qrLib) qrLib = new Promise((res, rej) => { const s = document.createElement('script'); s.src = '/inkwellmedia/vendor/qrcode-generator-1.4.4.js'; s.onload = () => res(window.qrcode); s.onerror = () => { qrLib = null; rej(new Error('qr-load')); }; document.head.append(s); });
+    return qrLib;
+  }
+  const qrEsc = (v) => String(v).replace(/([\\;,:"])/g, '\\$1');
+  function qrPayload() {
+    const kind = $('qr-kind').value, v = (id) => ($(id) ? $(id).value.trim() : '');
+    if (kind === 'wifi') { const ssid = v('qr-ssid'); if (!ssid) return ''; const sec = $('qr-sec').value; return `WIFI:T:${sec};S:${qrEsc(ssid)};${sec === 'nopass' ? '' : `P:${qrEsc(v('qr-pass'))};`}${$('qr-hidden').checked ? 'H:true;' : ''};`; }
+    if (kind === 'email') { const to = v('qr-to'); if (!to) return ''; const q = new URLSearchParams(); if (v('qr-subj')) q.set('subject', v('qr-subj')); if (v('qr-body')) q.set('body', v('qr-body')); const qs = q.toString().replace(/\+/g, '%20'); return `mailto:${to}${qs ? '?' + qs : ''}`; }
+    if (kind === 'phone') { const n = v('qr-num').replace(/[^\d+]/g, ''); if (!n) return ''; return $('qr-sms').checked ? `SMSTO:${n}:${v('qr-msg')}` : `tel:${n}`; }
+    let t = v('qr-text'); if (kind === 'link' && t && !/^[a-z][a-z0-9+.-]*:/i.test(t)) t = 'https://' + t;
+    return t;
+  }
+  let qrLogo = null;
+  async function drawQr(px) {
+    const lib = await ensureQr();
+    const text = qrPayload(); if (!text) return null;
+    const ecc = qrLogo ? 'H' : 'M';
+    const qr = lib(0, ecc); qr.addData(unescape(encodeURIComponent(text)), 'Byte'); qr.make();
+    const n = qr.getModuleCount(), margin = +$('qr-margin').value;
+    const c = document.createElement('canvas'); c.width = c.height = px;
+    const ctx = c.getContext('2d'); const cell = px / (n + margin * 2);
+    ctx.fillStyle = $('qr-bgc').value; ctx.fillRect(0, 0, px, px); ctx.fillStyle = $('qr-fg').value;
+    for (let r = 0; r < n; r++) for (let col = 0; col < n; col++) if (qr.isDark(r, col)) ctx.fillRect(Math.floor((col + margin) * cell), Math.floor((r + margin) * cell), Math.ceil(cell), Math.ceil(cell));
+    if (qrLogo) {
+      const box = px * 0.22, x = (px - box) / 2;
+      ctx.fillStyle = $('qr-bgc').value; roundRectPath(ctx, x - box * 0.08, x - box * 0.08, box * 1.16, box * 1.16, box * 0.16); ctx.fill();
+      const k = Math.min(box / qrLogo.width, box / qrLogo.height); const w = qrLogo.width * k, h = qrLogo.height * k;
+      ctx.drawImage(qrLogo, (px - w) / 2, (px - h) / 2, w, h);
+    }
+    return { canvas: c, qr, n, margin, text };
+  }
+  function qrSvg(qr, n, margin, fg, bg) {
+    const size = n + margin * 2; let d = '';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + margin} ${r + margin}h1v1h-1z`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="${bg}"/><path d="${d}" fill="${fg}"/></svg>`;
+  }
+  function contrastOk(a, b) {
+    const L = (h) => { const v = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((x) => x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+    const [x, y] = [L(a), L(b)]; return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) >= 3 && x < y;
+  }
+  function setupQr(host) {
+    qrLogo = null;
+    host.innerHTML = `<canvas class="live-preview" id="qr-prev" width="280" height="280" style="max-width:280px;margin:6px auto 14px"></canvas>
+      <div class="field"><label for="qr-kind">What should it open?</label><select id="qr-kind"><option value="link">A website link</option><option value="text">Plain text</option><option value="wifi">Join a Wi-Fi network</option><option value="email">Write an email</option><option value="phone">Call or text a number</option></select></div>
+      <div id="qr-fields"></div>
+      <div class="field-row"><div class="field"><label for="qr-fg">Code colour</label><input type="color" id="qr-fg" value="#000000"/></div><div class="field"><label for="qr-bgc">Background</label><input type="color" id="qr-bgc" value="#ffffff"/></div></div>
+      <div class="field-row"><div class="field"><label for="qr-size">Size</label><select id="qr-size"><option value="512">512 px (screens)</option><option value="1024" selected>1024 px (most uses)</option><option value="2048">2048 px (print)</option></select></div><div class="field"><label for="qr-fmt">File type</label><select id="qr-fmt"><option value="png">PNG picture</option><option value="svg">SVG (sharp at any size, for print)</option></select></div></div>
+      <div class="field-row"><div class="field"><label for="qr-margin">White border</label><select id="qr-margin"><option value="1">Thin</option><option value="4" selected>Standard</option><option value="6">Wide</option></select></div><div class="field"><label for="qr-logo">Logo in the middle (optional)</label><input type="file" id="qr-logo" accept="image/*"/></div></div>
+      <p class="note-soft" id="qr-warn" style="text-align:left;margin:0 0 12px"></p>
+      <p class="suite-link" style="text-align:left">Need to change where the code points after it’s printed, or count scans? <a href="https://blot.inkwelltools.com/?utm_source=inkwelltools&amp;utm_medium=media&amp;utm_campaign=qr" target="_blank" rel="noopener">Inkwell Blot</a> makes editable QR codes with scan counts.</p>`;
+    const fields = () => {
+      const k = $('qr-kind').value, f = $('qr-fields');
+      const inp = (id, label, type = 'text', ph = '') => `<div class="field"><label for="${id}">${label}</label><input type="${type}" id="${id}" placeholder="${ph}" autocomplete="off"/></div>`;
+      if (k === 'wifi') f.innerHTML = inp('qr-ssid', 'Network name') + `<div class="field-row">${inp('qr-pass', 'Password')}<div class="field"><label for="qr-sec">Security</label><select id="qr-sec"><option value="WPA">WPA / WPA2 / WPA3</option><option value="WEP">WEP (old)</option><option value="nopass">No password</option></select></div></div><label class="opt-check"><input type="checkbox" id="qr-hidden"/> Hidden network</label>`;
+      else if (k === 'email') f.innerHTML = inp('qr-to', 'Email address', 'email', 'you@example.com') + inp('qr-subj', 'Subject (optional)') + inp('qr-body', 'Message (optional)');
+      else if (k === 'phone') f.innerHTML = inp('qr-num', 'Phone number', 'tel', '+1 603 555 0123') + `<label class="opt-check"><input type="checkbox" id="qr-sms"/> Start a text message instead of a call</label>` + inp('qr-msg', 'Text message (optional)');
+      else f.innerHTML = k === 'link' ? inp('qr-text', 'Link', 'url', 'https://example.com') : `<div class="field"><label for="qr-text">Text</label><textarea id="qr-text" rows="3"></textarea></div>`;
+      f.querySelectorAll('input,select,textarea').forEach((el) => { el.addEventListener('input', draw); el.addEventListener('change', draw); });
+      draw();
+    };
+    let pending = 0;
+    const draw = async () => {
+      const ticket = ++pending;
+      const prev = $('qr-prev'); if (!prev) return;
+      const ctx = prev.getContext('2d');
+      let out = null; try { out = await drawQr(560); } catch (_) {}
+      if (ticket !== pending || !$('qr-prev')) return;
+      prev.width = prev.height = 560; prev.style.width = '280px';
+      if (!out) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 560, 560); ctx.fillStyle = '#9a90ad'; ctx.font = '500 26px Inter, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Your code appears here', 280, 286); $('go').disabled = true; $('qr-warn').textContent = ''; return; }
+      ctx.drawImage(out.canvas, 0, 0);
+      $('go').disabled = false;
+      const warn = [];
+      if (!contrastOk($('qr-fg').value, $('qr-bgc').value)) warn.push('Some phones can’t read light codes on dark backgrounds or low-contrast colours. Scan it before you print.');
+      if (out.text.length > 300) warn.push('That’s a lot of text, so the code is dense. Shorter text scans more easily.');
+      if (qrLogo) warn.push('With a logo, the code uses extra error correction so it still scans. Test it with your phone.');
+      $('qr-warn').textContent = warn.join(' ');
+    };
+    if (document.body.dataset.qrkind) $('qr-kind').value = document.body.dataset.qrkind;
+    $('qr-kind').addEventListener('change', fields);
+    ['qr-fg', 'qr-bgc', 'qr-margin'].forEach((id) => { $(id).addEventListener('input', draw); $(id).addEventListener('change', draw); });
+    $('qr-logo').addEventListener('change', async (e) => { const f = e.target.files[0]; qrLogo = null; if (f) { try { qrLogo = await loadImage(f); } catch (_) { qrLogo = null; } } draw(); });
+    fields();
+  }
+
+  /* ---------- round 15: audiogram background card ---------- */
+  const AG_SHAPES = { sq: [1080, 1080, 'Square 1080 × 1080 (Instagram, LinkedIn, X)'], v: [1080, 1920, 'Vertical 1080 × 1920 (Reels, TikTok, Stories)'], w: [1920, 1080, 'Wide 1920 × 1080 (YouTube)'] };
+  async function audiogramCard({ W, H, bg, accent, title, sub, art }) {
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const ctx = c.getContext('2d');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    const pad = Math.round(Math.min(W, H) * 0.08); const wide = W > H;
+    let textTop = pad, textLeft = pad, textW = W - pad * 2;
+    if (art) {
+      const size = wide ? H - pad * 2 : Math.round(Math.min(W - pad * 2, H * 0.42));
+      const k = Math.max(size / art.width, size / art.height); const dw = art.width * k, dh = art.height * k;
+      ctx.save(); roundRectPath(ctx, pad, pad, size, size, size * 0.05); ctx.clip(); ctx.drawImage(art, pad + (size - dw) / 2, pad + (size - dh) / 2, dw, dh); ctx.restore();
+      if (wide) { textLeft = pad * 2 + size; textW = W - textLeft - pad; } else textTop = pad * 1.5 + size;
+    }
+    const big = Math.round(Math.min(W, H) * 0.062);
+    ctx.fillStyle = '#ffffff'; ctx.font = `600 ${big}px Fraunces, Georgia, serif`; ctx.textBaseline = 'top';
+    const tl = wrapLines(ctx, title, textW).slice(0, 3);
+    tl.forEach((ln, i) => ctx.fillText(ln, textLeft, textTop + i * big * 1.18));
+    let y = textTop + tl.length * big * 1.18 + (tl.length ? big * 0.4 : 0);
+    if (sub) { const s = Math.round(big * 0.55); ctx.font = `500 ${s}px Inter, system-ui, sans-serif`; ctx.fillStyle = accent; wrapLines(ctx, sub, textW).slice(0, 2).forEach((ln, i) => ctx.fillText(ln, textLeft, y + i * s * 1.3)); y += s * 2.8; }
+    // the moving wave goes in a band across the lower part of the card
+    const waveH = Math.round(H * (wide ? 0.26 : 0.18)); const waveY = Math.round(H - pad - waveH);
+    const waveX = wide && art ? textLeft : pad, waveW = (wide && art ? textW : W - pad * 2);
+    return { png: await canvasBlob(c, 'image/png'), wave: { x: waveX, y: waveY, w: Math.round(waveW / 2) * 2, h: Math.round(waveH / 2) * 2 } };
+  }
+  const parseTime = (v) => { const s = String(v || '').trim(); if (!s) return 0; const p = s.split(':').map(Number); if (p.some(isNaN)) return NaN; return p.reduce((a, b) => a * 60 + b, 0); };
+  const fmtClock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  function startPicker(host, file, inputId) {
+    const url = URL.createObjectURL(file); if (clipUrl) URL.revokeObjectURL(clipUrl); clipUrl = url;
+    const tag = isVideoFile(file) ? 'video' : 'audio';
+    host.insertAdjacentHTML('afterbegin', `<${tag} id="sp-media" src="${url}" controls preload="metadata" style="width:100%;${tag === 'video' ? 'max-height:220px;border-radius:10px;' : ''}margin:4px 0 6px"></${tag}><button type="button" class="linkbtn" id="sp-set" style="margin:0 0 12px">Start from where it’s playing now</button>`);
+    $('sp-set').addEventListener('click', () => { const t = $('sp-media').currentTime || 0; $(inputId).value = fmtClock(t); $(inputId).dispatchEvent(new Event('input', { bubbles: true })); });
   }
 
   const TOOLS = {
@@ -2016,6 +2291,127 @@
         return { blob, name:'before-and-after.jpg', mime:'image/jpeg', compare:false, note:`${out.W} × ${out.H} px. Each photo is trimmed evenly to fill its half.` };
       },
     },
+    'screenshot': {
+      group:'Images', engine:'canvas', name:'Screenshot beautifier', blurb:'Put a screenshot on a background, with a window or phone frame', icon:ICONS.screenshot,
+      accept:'image/*,.heic,.heif', dropText:'Drop a screenshot, paste one, or click to choose', dropSub:'PNG, JPG or WebP · press Ctrl+V (⌘V on a Mac) to paste',
+      async options(host, file){ await setupShot(host, file); },
+      async run(file){
+        const o = readShotOpts();
+        const out = drawShot(shotState.image, o, 1);
+        const blob = await encodeCanvas(out.canvas, 'image/png');
+        return { blob, name:file.name.replace(/\.[^.]+$/,'')+'-framed.png', mime:'image/png', compare:false, note:`${out.canvas.width} × ${out.canvas.height} px PNG.` };
+      },
+    },
+    'palette': {
+      group:'Images', engine:'canvas', name:'Colour palette from a photo', blurb:'Pull the main colours out of any picture, with hex codes', icon:ICONS.palette,
+      accept:'image/*,.heic,.heif', dropText:'Drop a photo or logo, or click to choose', dropSub:'JPG, PNG, WebP or HEIC',
+      async options(host, file){
+        host.innerHTML = `<div class="field-row"><div class="field"><label for="pl-n">How many colours</label><select id="pl-n"><option value="5">5</option><option value="6" selected>6</option><option value="8">8</option><option value="10">10</option></select></div>
+          <div class="field"><label for="pl-order">Order</label><select id="pl-order"><option value="share">Most used first</option><option value="light">Lightest to darkest</option></select></div></div>
+          <p class="plabel">Click a colour to copy its code</p><div class="palette-swatches" id="pl-sw"></div>
+          <div class="settings-row" style="justify-content:flex-start"><button type="button" class="linkbtn" id="pl-css">Copy as CSS</button><span aria-hidden="true">·</span><button type="button" class="linkbtn" id="pl-list">Copy all hex codes</button><span class="set-msg" id="pl-msg" aria-live="polite"></span></div>`;
+        const copy = async (text, msg) => { try { await navigator.clipboard.writeText(text); $('pl-msg').textContent = msg; setTimeout(() => { if ($('pl-msg')) $('pl-msg').textContent = ''; }, 1800); } catch (_) { $('pl-msg').textContent = text; } };
+        const draw = async () => {
+          paletteCols = await extractPalette(file, +$('pl-n').value, $('pl-order').value);
+          $('pl-sw').innerHTML = paletteCols.map((c) => `<button type="button" data-hex="${c.hex}" title="Copy ${c.hex}"><span style="background:${c.hex}"></span><b>${c.hex.toUpperCase()}</b></button>`).join('');
+          $('pl-sw').querySelectorAll('[data-hex]').forEach((b) => b.addEventListener('click', () => copy(b.dataset.hex, `Copied ${b.dataset.hex}`)));
+        };
+        $('pl-css').addEventListener('click', () => copy(':root {\n' + paletteCols.map((c, i) => `  --color-${i + 1}: ${c.hex};`).join('\n') + '\n}', 'CSS copied'));
+        $('pl-list').addEventListener('click', () => copy(paletteCols.map((c) => c.hex).join(', '), 'Copied'));
+        $('pl-n').addEventListener('change', draw); $('pl-order').addEventListener('change', draw);
+        await draw();
+      },
+      async run(file){
+        if (!paletteCols.length) paletteCols = await extractPalette(file, 6, 'share');
+        const canvas = await paletteCard(file, paletteCols);
+        const blob = await encodeCanvas(canvas, 'image/png');
+        return { blob, name:file.name.replace(/\.[^.]+$/,'')+'-palette.png', mime:'image/png', compare:false, note:`Colours: ${paletteCols.map((c) => c.hex.toUpperCase()).join(', ')}` };
+      },
+    },
+    'qr-code': {
+      group:'Images', engine:'canvas', noFile:true, goText:'Download the QR code', noFileNote:'Made on this device; nothing is sent anywhere.', name:'QR code generator', blurb:'Links, Wi-Fi, email or phone, with your colours and logo', icon:ICONS.qr,
+      accept:'', dropText:'', dropSub:'',
+      options(host){ setupQr(host); },
+      async run(){
+        const px = +$('qr-size').value;
+        const out = await drawQr(px);
+        if (!out) throw new Error('qr-empty');
+        const base = 'qr-code-' + ($('qr-kind').value);
+        if ($('qr-fmt').value === 'svg' && !qrLogo) {
+          const svgText = qrSvg(out.qr, out.n, out.margin, $('qr-fg').value, $('qr-bgc').value);
+          return { blob:new Blob([svgText], { type:'image/svg+xml' }), name:base + '.svg', mime:'image/svg+xml', compare:false, note:'SVG stays sharp at any size, so it’s best for print.' };
+        }
+        const blob = await encodeCanvas(out.canvas, 'image/png');
+        return { blob, name:base + '.png', mime:'image/png', compare:false, note:`${px} × ${px} px PNG.${$('qr-fmt').value === 'svg' && qrLogo ? ' Saved as PNG because the logo is a picture.' : ''} Scan it with your phone before printing.` };
+      },
+    },
+    'ringtone': {
+      group:'Video & audio', engine:'ffmpeg', name:'Ringtone maker', blurb:'Cut a song or clip into an iPhone or Android ringtone', icon:ICONS.ringtone,
+      accept:'audio/*,video/*', dropText:'Drop a song or video, or click to choose', dropSub:'MP3, M4A, WAV, MP4 or MOV',
+      options(host, file){
+        host.innerHTML = `<div class="field-row"><div class="field"><label for="rt-start">Start at (minutes:seconds)</label><input type="text" id="rt-start" value="0:00" inputmode="numeric"/></div>
+          <div class="field"><label for="rt-len">Length</label><select id="rt-len"><option value="15">15 seconds</option><option value="20">20 seconds</option><option value="30" selected>30 seconds</option><option value="40">40 seconds (iPhone’s longest)</option></select></div></div>
+          <div class="field"><label for="rt-fmt">For</label><select id="rt-fmt"><option value="m4r">iPhone (.m4r)</option><option value="mp3">Android (.mp3)</option></select></div>
+          <label class="opt-check"><input type="checkbox" id="rt-fade" checked/> Fade in and out</label>
+          <label class="opt-check"><input type="checkbox" id="rt-loud" checked/> Make it loud enough to hear</label>`;
+        if (document.body.dataset.rtfmt) $('rt-fmt').value = document.body.dataset.rtfmt;
+        startPicker(host, file, 'rt-start');
+      },
+      async run(file){
+        const start = parseTime($('rt-start').value); if (isNaN(start) || start < 0) throw new Error('clip-range');
+        const len = +$('rt-len').value, fmt = $('rt-fmt').value;
+        const af = [];
+        if ($('rt-fade').checked) af.push('afade=t=in:d=0.8', `afade=t=out:st=${Math.max(0, len - 1.5)}:d=1.5`);
+        if ($('rt-loud').checked) af.push('loudnorm=I=-14:TP=-1:LRA=11');
+        const base = file.name.replace(/\.[^.]+$/,'');
+        const common = ['-vn','-t',String(len), ...(af.length ? ['-af', af.join(',')] : []), '-ar','44100'];
+        if (fmt === 'mp3') {
+          const blob = await runFfmpeg(file, [...common,'-c:a','libmp3lame','-b:a','192k'], 'out.mp3', 'audio/mpeg', ['-ss', String(start)]);
+          return { blob, name:`${base}-ringtone.mp3`, mime:'audio/mpeg', compare:false, note:'Android: copy it to the Ringtones folder (or open it on the phone), then pick it in Settings → Sound → Ringtone.' };
+        }
+        const blob = await runFfmpeg(file, [...common,'-c:a','aac','-b:a','192k','-f','ipod'], 'out.m4r', 'audio/x-m4r', ['-ss', String(start)]);
+        return { blob:new Blob([blob], { type:'audio/mp4' }), name:`${base}.m4r`, mime:'audio/mp4', compare:false, note:'iPhone: connect it to a computer, open it in Finder (Mac) or iTunes/Apple Devices (Windows) and drag the .m4r onto the iPhone. Then pick it in Settings → Sounds & Haptics → Ringtone.' };
+      },
+    },
+    'audiogram': {
+      group:'Video & audio', engine:'ffmpeg', combine:true, canGo:(fs) => fs.filter((f) => /^audio\//.test(f.type) || isVideoFile(f) || /\.(mp3|m4a|wav|aac|ogg|flac)$/i.test(f.name)).length === 1, name:'Audiogram maker', blurb:'Turn a podcast clip into a video with a moving sound wave', icon:ICONS.audiogram,
+      accept:'audio/*,video/*,image/*', dropText:'Drop an audio clip (and a cover picture, if you like), or click to choose', dropSub:'MP3, M4A, WAV or MP4 · add a JPG or PNG for the cover',
+      options(host){
+        const audio = selectedFiles.find((f) => !/^image\//.test(f.type) && !/\.(jpe?g|png|webp|heic)$/i.test(f.name));
+        host.innerHTML = `<div class="field"><label for="ag-shape">Shape</label><select id="ag-shape">${Object.entries(AG_SHAPES).map(([k, v]) => `<option value="${k}">${v[2]}</option>`).join('')}</select></div>
+          <div class="field"><label for="ag-title">Title</label><input type="text" id="ag-title" maxlength="90" placeholder="Episode 12: Pricing your first product"/></div>
+          <div class="field"><label for="ag-sub">Second line (optional)</label><input type="text" id="ag-sub" maxlength="80" placeholder="The Small Business Hour"/></div>
+          <div class="field-row"><div class="field"><label for="ag-start">Start at (minutes:seconds)</label><input type="text" id="ag-start" value="0:00" inputmode="numeric"/></div>
+          <div class="field"><label for="ag-len">Length</label><select id="ag-len"><option value="15">15 seconds</option><option value="30" selected>30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option><option value="90">90 seconds</option></select></div></div>
+          <div class="field-row"><div class="field"><label for="ag-bg">Background</label><input type="color" id="ag-bg" value="#141019"/></div><div class="field"><label for="ag-wave">Wave colour</label><input type="color" id="ag-wave" value="#cca24e"/></div></div>
+          <div class="field"><label for="ag-style">Wave style</label><select id="ag-style"><option value="cline">Filled</option><option value="line">Lines</option><option value="p2p">Thin line</option></select></div>
+          <p class="note-soft" style="text-align:left;margin:0 0 16px">${selectedFiles.some((f) => /^image\//.test(f.type)) ? 'Your picture is used as the cover.' : 'Tip: choose a cover picture together with the audio to show it on the video.'} Short clips work best; a 30-second clip takes a minute or two.</p>`;
+        if (audio) startPicker(host, audio, 'ag-start');
+      },
+      async runAll(files){
+        const audio = files.find((f) => !/^image\//.test(f.type) && !/\.(jpe?g|png|webp|heic)$/i.test(f.name));
+        const pic = files.find((f) => f !== audio && (/^image\//.test(f.type) || /\.(jpe?g|png|webp|heic)$/i.test(f.name)));
+        if (!audio) throw new Error('need-audio');
+        const start = parseTime($('ag-start').value); if (isNaN(start) || start < 0) throw new Error('clip-range');
+        const len = +$('ag-len').value;
+        const [W, H] = AG_SHAPES[$('ag-shape').value];
+        const art = pic ? await loadImage(pic) : null;
+        const card = await audiogramCard({ W, H, bg: $('ag-bg').value, accent: $('ag-wave').value, title: $('ag-title').value.trim(), sub: $('ag-sub').value.trim(), art });
+        if (art && art.close) art.close();
+        const f = await ensureFfmpeg(() => { $('w-label').textContent = 'Loading the engine…'; $('w-note').textContent = 'Downloading the media engine for the first time (~30 MB). This only happens once.'; });
+        const ext = (audio.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp3';
+        await f.writeFile('ag-in.' + ext, await fetchFile(audio));
+        await f.writeFile('ag-bg.png', new Uint8Array(await card.png.arrayBuffer()));
+        const wv = card.wave, col = $('ag-wave').value.replace('#', '0x');
+        $('w-label').textContent = 'Making the video…'; $('w-note').textContent = 'Working on your device. The picture is drawn frame by frame, so this takes a little while.';
+        const graph = `[1:a]showwaves=s=${wv.w}x${wv.h}:mode=${$('ag-style').value}:colors=${col}:rate=25:scale=sqrt,format=rgba[w];[0:v][w]overlay=${wv.x}:${wv.y}:shortest=1,format=yuv420p[v]`;
+        await f.exec(['-loop','1','-framerate','25','-i','ag-bg.png','-ss',String(start),'-t',String(len),'-i','ag-in.' + ext,'-filter_complex',graph,'-map','[v]','-map','1:a','-map_metadata','-1','-c:v','libx264','-preset','ultrafast','-crf','24','-r','25','-c:a','aac','-b:a','160k','-t',String(len),'-shortest','-movflags','+faststart','ag-out.mp4']);
+        const data = await f.readFile('ag-out.mp4');
+        for (const n of ['ag-in.' + ext, 'ag-bg.png', 'ag-out.mp4']) { try { await f.deleteFile(n); } catch (_) {} }
+        if (!(data && data.length > 1024)) throw new Error('empty-output');
+        return { blob:new Blob([data.buffer], { type:'video/mp4' }), name:audio.name.replace(/\.[^.]+$/,'') + '-audiogram.mp4', mime:'video/mp4', compare:false, note:`${W} × ${H}, ${len} seconds. Add captions with Auto captions if you want the words on screen too.` };
+      },
+    },
     'checkup-fix': {
       group:'Hidden', hidden:true, engine:'mixed', batch:true, name:'Fix my files', blurb:'', icon:ICONS.check,
       accept:'image/*,.heic,.heif,video/*', dropText:'Drop files', dropSub:'',
@@ -2083,7 +2479,12 @@
     'video-subtitles':'/add-subtitles-to-video/',
     'audio-denoise':'/remove-background-noise/',
     'screen-record':'/screen-recorder/',
-    'image-collage':'/photo-collage/'
+    'image-collage':'/photo-collage/',
+    'screenshot':'/screenshot-beautifier/',
+    'palette':'/color-palette-from-image/',
+    'qr-code':'/qr-code-generator/',
+    'ringtone':'/ringtone-maker/',
+    'audiogram':'/audiogram-maker/'
   };
 
   function renderHub() {
@@ -2120,7 +2521,13 @@
   function setProgress(p){
     p = Math.max(0, Math.min(100, p));
     if (p > 0 && !gotRealProgress) { gotRealProgress = true; $('w-track').classList.remove('indet'); }
-    if (gotRealProgress) { $('w-fill').style.width = p+'%'; $('w-pct').textContent = p+'%'; }
+    if (gotRealProgress) {
+      $('w-fill').style.width = p+'%';
+      const sec = (Date.now() - startedAt) / 1000;
+      let eta = '';
+      if (p >= 3 && p < 99 && sec > 4) { const left = Math.round(sec * (100 - p) / p); eta = left < 60 ? ' · under a minute left' : ` · about ${Math.round(left / 60)} min left`; }
+      $('w-pct').textContent = p+'%' + eta;
+    }
   }
   function resetSelection(){
     selectedFiles=[]; fileInput.value='';
@@ -2147,13 +2554,14 @@
     $('change').classList.toggle('hidden', !!current.noFile);
     if (current.noFile) {
       selectedFiles = [new File([], current.name)];
-      $('r-name').textContent = current.name; $('r-size').textContent = 'Nothing is uploaded; the recording stays on this device.';
-      $('go').textContent = 'Start recording'; $('go').disabled = true; show('s-ready');
-      Promise.resolve(current.options($('opts'))).then(() => { if (canRecordScreen()) $('go').disabled = false; });
+      $('r-name').textContent = current.name; $('r-size').textContent = current.noFileNote || 'Nothing is uploaded; the recording stays on this device.';
+      $('go').textContent = current.goText || 'Start recording'; $('go').disabled = true; show('s-ready');
+      Promise.resolve(current.options($('opts'))).then(() => { if (currentId !== 'screen-record' || canRecordScreen()) { if (currentId === 'screen-record') $('go').disabled = false; } afterOptions(); });
       window.scrollTo({top:0,behavior:'smooth'});
       return;
     }
     show('s-pick');
+    const ph = $('paste-hint'); if (/image/.test(current.accept || '')) addPasteHint(); else if (ph) ph.remove();
     window.scrollTo({top:0,behavior:'smooth'});
   }
   function backToHub(){
@@ -2190,12 +2598,13 @@
     $('r-size').textContent = files.length > 1 ? `${fmtSize(totalBytes)} total · processed one at a time` : fmtSize(files[0].size);
     $('go').textContent = current.combine ? `${current.name} (${files.length})` : files.length > 1 ? `${current.name} — ${files.length} ${noun}` : current.name;
     $('go').disabled = true; show('s-ready');
-    try { await current.options($('opts'), files[0]); $('go').disabled = !!(current.canGo && !current.canGo(files)); }
+    try { await current.options($('opts'), files[0]); $('go').disabled = !!(current.canGo && !current.canGo(files)); afterOptions(); }
     catch (error) { showErr("Couldn't open this file", 'Try a standard JPG, PNG, WebP, HEIC, MP4 or MOV file.'); console.error(error); }
     const warn = $('ready-warn');
     warn.innerHTML = files.some(file => file.size > lim.softMB * 1048576)
       ? `<div class="err" style="border-color:var(--brass-line);background:var(--brass-soft);color:var(--muted)"><b style="color:var(--brass)">Above the recommended ~${mbLabel(lim.softMB)} per file.</b><br>You can continue, but larger files may be slow or run out of browser memory. Try a smaller file${current.batch ? ' or fewer images' : ''} if processing fails.</div>`
       : '';
+    if (isSmallDevice() && current.engine === 'ffmpeg' && totalBytes > 80 * 1048576) warn.insertAdjacentHTML('beforeend', `<div class="err" style="border-color:var(--brass-line);background:var(--brass-soft);color:var(--muted)"><b style="color:var(--brass)">This is a big video for a phone.</b><br>Phones give a browser less memory than a computer, so it may stop part-way. Close other apps and tabs, keep the screen on, or use a computer for this one.</div>`);
   }
 
   $('change').addEventListener('click', () => { resetSelection(); show('s-pick'); });
@@ -2204,6 +2613,7 @@
   function renderResult({ blob, name, mime, compare, inputBytes, batchCount=0, batchOutputBytes=0, notes=[], outputs=[] }) {
     if (outUrl) URL.revokeObjectURL(outUrl);
     outUrl = URL.createObjectURL(blob); outName = name;
+    window.__inkwellMediaLast = { name, url: outUrl }; // read by the automated checks
     $('d-from').textContent = inputBytes ? fmtSize(inputBytes) : 'New'; $('d-to').textContent = fmtSize(blob.size);
     const noteSlot = $('done-note'); noteSlot.innerHTML=''; $('d-pct').style.fontSize='';
     if (batchCount) {
@@ -2229,24 +2639,36 @@
     }
     $('download').textContent = batchCount ? 'Download ZIP' : 'Download';
     lastOutputs = outputs.length ? outputs : [{ name, blob }];
+    setupShare(lastOutputs);
     renderNextSteps(lastOutputs);
     show('s-done'); maybeShowCapture();
   }
 
+  let cancelRequested = false;
+  $('w-cancel').addEventListener('click', () => {
+    cancelRequested = true;
+    $('w-cancel').disabled = true; $('w-label').textContent = 'Stopping…';
+    if (ffmpeg && currentEngineBusy()) { try { ffmpeg.terminate(); } catch (_) {} ffmpeg = null; ffmpegLoading = null; }
+  });
+  const currentEngineBusy = () => current && (current.engine === 'ffmpeg' || current.engine === 'mixed');
+  const deliver = (args) => { if (cancelRequested) throw new Error('cancelled'); renderResult(args); };
   $('go').addEventListener('click', async () => {
     if (!selectedFiles.length) return;
+    saveSettings();
+    cancelRequested = false; $('w-cancel').disabled = false; $('w-cancel').classList.toggle('hidden', !!(current && current.noFile));
     clearErr(); show('s-working'); startWorking();
     $('w-label').textContent = 'Working…'; $('w-note').textContent = current.engine === 'canvas' ? 'Processing on your device — this is quick.' : 'Working on your device.';
     const inputBytes = selectedFiles.reduce((sum,file)=>sum+file.size,0);
     try {
       if (current.combine) {
         const result = await current.runAll(selectedFiles.slice()); setProgress(100);
-        renderResult({ ...result, inputBytes, notes: result.note ? [result.note] : [] });
+        deliver({ ...result, inputBytes, notes: result.note ? [result.note] : [] });
       } else if (current.batch && selectedFiles.length > 1) {
         const entries = [], notes = [];
         $('w-files').innerHTML = selectedFiles.map((file,index) => `<div class="batch-file" data-file-index="${index}"><span class="batch-file-name">${file.name.replace(/[<>]/g,'')}</span><span class="batch-file-state">Waiting</span></div>`).join('');
         $('w-files').classList.remove('hidden');
         for (let index=0; index<selectedFiles.length; index++) {
+          if (cancelRequested) throw new Error('cancelled');
           const file = selectedFiles[index];
           const row = $('w-files').querySelector(`[data-file-index="${index}"]`);
           row.classList.add('is-active'); row.querySelector('.batch-file-state').textContent = 'Processing';
@@ -2262,13 +2684,17 @@
         const batchOutputBytes = entries.reduce((sum,entry) => sum + entry.blob.size, 0);
         const zipLabel = currentId === 'checkup-fix' ? 'fixed' : currentId === 'strip-metadata' ? 'clean' : currentId.replace('image-','');
         if (currentId === 'strip-metadata') notes.unshift(`Found and removed location or camera details in ${notes.filter(n => n.startsWith('Removed from')).length} of ${entries.length} files.`);
-        renderResult({ blob, name:`inkwell-${zipLabel}-${entries.length}-files.zip`, mime:'application/zip', compare:false, inputBytes, batchCount:entries.length, batchOutputBytes, notes, outputs: entries.map(e => ({ name:e.name, blob:e.blob })) });
+        deliver({ blob, name:`inkwell-${zipLabel}-${entries.length}-files.zip`, mime:'application/zip', compare:false, inputBytes, batchCount:entries.length, batchOutputBytes, notes, outputs: entries.map(e => ({ name:e.name, blob:e.blob })) });
       } else {
         const result = await current.run(selectedFiles[0]); setProgress(100);
-        renderResult({ ...result, inputBytes, notes: result.note ? [result.note] : [] });
+        deliver({ ...result, inputBytes, notes: result.note ? [result.note] : [] });
       }
     } catch (err) {
+      if (cancelRequested) { show('s-ready'); $('ready-warn').innerHTML = '<p class="note-soft">Stopped. Nothing was saved; your file is still selected.</p>'; return; }
       console.error(err); const message = String(err && err.message || err);
+      if (/qr-empty/.test(message)) { showErr('Add something to the code', 'Type a link, some text, or the Wi-Fi, email or phone details first.'); show('s-ready'); return; }
+      if (/qr-load/.test(message)) { showErr("Couldn't load the QR maker", 'Reload the page and try again. After the first use it works offline.'); show('s-ready'); return; }
+      if (/need-audio/.test(message)) { showErr('Choose an audio clip', 'Click “Change file” and pick one audio or video file (and a picture for the cover if you like).'); show('s-ready'); return; }
       if (/clip-range/.test(message)) showErr('Check the start and end', 'The end time needs to be after the start time, and inside the video.');
       else if (/too-long:/.test(message)) showErr('This video is too long for that size', `To fit at a watchable quality it needs to be under about ${Math.max(1, Math.floor(parseInt(message.split('too-long:')[1],10)/60))} minutes. Trim it first, then compress the shorter clip.`);
       else if (/no-duration/.test(message)) showErr("Couldn't read how long this video is", 'Try the Balanced setting instead, or convert it to MP4 first.');
@@ -2441,7 +2867,8 @@
 
   /* ---------- next steps after a result ---------- */
   const NEXT_STEPS = {
-    image: [['blur-faces','Blur faces & plates'],['image-text','Add text'],['image-collage','Make a collage'],['strip-metadata','Remove location & camera data'],['image-to-size','Compress to a size'],['image-resize','Resize it for a site'],['image-watermark','Add a watermark'],['image-convert','Change the format']],
+    audio: [['ringtone','Make a ringtone'],['audiogram','Make an audiogram video'],['audio-denoise','Reduce background noise'],['audio-level','Even out the volume']],
+    image: [['blur-faces','Blur faces & plates'],['image-text','Add text'],['image-collage','Make a collage'],['strip-metadata','Remove location & camera data'],['image-to-size','Compress to a size'],['image-resize','Resize it for a site'],['image-watermark','Add a watermark'],['image-convert','Change the format'],['palette','Get its colour palette']],
     video: [['video-captions','Add captions'],['video-vertical','Make it 9:16 for Reels'],['audio-denoise','Reduce background noise'],['video-compress','Compress it'],['video-trim','Trim it'],['audio-level','Even out the volume'],['video-gif','Make a GIF'],['video-mute','Remove the sound'],['strip-metadata','Remove location data']],
   };
   function renderNextSteps(outputs) {
@@ -2466,6 +2893,202 @@
     }));
   }
 
+  /* ---------- round 15: remembered settings and setting links ---------- */
+  const SET_KEY = (id) => 'inkwellMedia.opts.' + id;
+  const SKIP_INPUT = /^(text|search|email|url|tel|password|file|hidden|button|submit)$/i;
+  function settingFields() {
+    const host = $('opts'); if (!host) return [];
+    return [...host.querySelectorAll('input,select')].filter((el) => {
+      if (el.tagName === 'INPUT' && SKIP_INPUT.test(el.type)) return false;
+      if (el.type === 'radio') return !!el.name;
+      return !!el.id;
+    });
+  }
+  function readSettings() {
+    const out = {};
+    for (const el of settingFields()) {
+      if (el.type === 'radio') { if (el.checked) out['r:' + el.name] = el.value; }
+      else if (el.type === 'checkbox') out[el.id] = el.checked ? '1' : '0';
+      else out[el.id] = el.value;
+    }
+    return out;
+  }
+  function applySettings(obj) {
+    let n = 0;
+    for (const [k, v] of Object.entries(obj || {})) {
+      let el = null;
+      if (k.startsWith('r:')) { el = [...document.querySelectorAll(`#opts input[type=radio][name="${CSS.escape(k.slice(2))}"]`)].find((r) => r.value === v); if (el && !el.checked) { el.checked = true; n++; } else el = null; }
+      else {
+        el = document.getElementById(k);
+        if (!el || !$('opts').contains(el) || (el.tagName === 'INPUT' && SKIP_INPUT.test(el.type))) continue;
+        if (el.type === 'checkbox') { const want = v === '1' || v === 'true'; if (el.checked === want) continue; el.checked = want; }
+        else if (el.tagName === 'SELECT') { if (![...el.options].some((o) => o.value === v) || el.value === v) continue; el.value = v; }
+        else { if (el.value === v) continue; el.value = v; }
+        n++;
+      }
+      if (el) { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }
+    }
+    return n;
+  }
+  const hasPagePreset = () => Object.keys(document.body.dataset).some((k) => k !== 'tool');
+  function urlSettings() {
+    const out = {};
+    for (const [k, v] of new URLSearchParams(location.search)) if (k.startsWith('o.')) out[k.slice(2)] = v;
+    return out;
+  }
+  let settingsApplied = '';
+  function afterOptions() {
+    const row = $('settings-row'); if (!row) return;
+    const fields = settingFields();
+    row.classList.toggle('hidden', !fields.length || currentId === 'checkup-fix');
+    $('set-msg').textContent = '';
+    if (!fields.length || currentId === 'checkup-fix') return;
+    const fromUrl = urlSettings();
+    let applied = 0;
+    // setting links win; otherwise the last settings used with this tool (not on one-job pages, which have their own preset)
+    if (Object.keys(fromUrl).length) applied = applySettings(fromUrl);
+    else if (!hasPagePreset()) { try { applied = applySettings(JSON.parse(localStorage.getItem(SET_KEY(currentId)) || 'null')); } catch (_) {} }
+    if (applied && settingsApplied !== currentId) { settingsApplied = currentId; $('set-msg').textContent = Object.keys(fromUrl).length ? 'Settings from the link applied.' : 'Your last settings applied.'; }
+  }
+  function saveSettings() {
+    if (!current || currentId === 'checkup-fix') return;
+    const s = readSettings(); if (!Object.keys(s).length) return;
+    try { localStorage.setItem(SET_KEY(currentId), JSON.stringify(s)); } catch (_) {}
+  }
+  $('set-link').addEventListener('click', async () => {
+    const q = new URLSearchParams(); for (const [k, v] of Object.entries(readSettings())) q.set('o.' + k, v);
+    const url = location.origin + (TOOL_PATHS[currentId] || location.pathname) + '?' + q.toString();
+    try { await navigator.clipboard.writeText(url); $('set-msg').textContent = 'Link copied. Anyone who opens it gets these settings.'; }
+    catch (_) { $('set-msg').textContent = url; }
+  });
+  $('set-reset').addEventListener('click', async () => {
+    try { localStorage.removeItem(SET_KEY(currentId)); } catch (_) {}
+    if (location.search) history.replaceState(null, '', location.pathname);
+    settingsApplied = currentId;
+    if (current.noFile) { openTool(currentId); return; }
+    const files = selectedFiles.slice(); await handleFiles(files);
+    $('set-msg').textContent = 'Back to the defaults.';
+  });
+
+  /* ---------- round 15: phone check, share sheet ---------- */
+  function isSmallDevice() {
+    const coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+    const lowMem = navigator.deviceMemory && navigator.deviceMemory <= 4;
+    return !!(coarse && (lowMem || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)));
+  }
+  let shareFiles = [];
+  function setupShare(outputs) {
+    const btn = $('share-btn'); if (!btn) return;
+    shareFiles = [];
+    btn.classList.add('hidden');
+    if (!navigator.share || !navigator.canShare) return;
+    const total = outputs.reduce((n, o) => n + o.blob.size, 0);
+    if (total > 250 * 1048576 || outputs.length > 10) return;
+    const files = outputs.map((o) => new File([o.blob], o.name, { type: o.blob.type || 'application/octet-stream' }));
+    try { if (!navigator.canShare({ files })) return; } catch (_) { return; }
+    shareFiles = files;
+    btn.textContent = files.length > 1 ? `Share ${files.length} files…` : 'Share…';
+    btn.classList.remove('hidden');
+  }
+  $('share-btn').addEventListener('click', async () => {
+    if (!shareFiles.length) return;
+    try { await navigator.share({ files: shareFiles, title: shareFiles[0].name }); }
+    catch (e) { if (!/AbortError/.test(String(e && e.name))) $('done-note').insertAdjacentHTML('beforeend', '<p class="note-soft">Sharing didn’t work here. Download it instead, then share it from your files.</p>'); }
+  });
+
+  /* ---------- round 15: paste a file, or drop it anywhere on the page ---------- */
+  const visible = (id) => { const el = $(id); return el && !el.classList.contains('hidden'); };
+  const canTakeFiles = () => visible('tool') && current && !current.noFile && (visible('s-pick') || visible('s-ready'));
+  function acceptsFile(file) {
+    const acc = (current && current.accept || '').split(',').map((x) => x.trim()).filter(Boolean);
+    if (!acc.length) return true;
+    return acc.some((a) => a.startsWith('.') ? file.name.toLowerCase().endsWith(a.toLowerCase()) : a.endsWith('/*') ? (file.type || '').startsWith(a.slice(0, -1)) : file.type === a);
+  }
+  function filesFromClipboard(e) {
+    const out = [];
+    for (const item of (e.clipboardData && e.clipboardData.items) || []) {
+      if (item.kind !== 'file') continue;
+      const f = item.getAsFile(); if (!f) continue;
+      const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '');
+      out.push(f.name && f.name !== 'image.png' ? f : new File([f], `pasted-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}.${ext}`, { type: f.type }));
+    }
+    return out;
+  }
+  document.addEventListener('paste', (e) => {
+    const files = filesFromClipboard(e); if (!files.length) return;
+    if (canTakeFiles()) { const ok = files.filter(acceptsFile); if (!ok.length) return; e.preventDefault(); handleFiles(ok); }
+    else if (visible('hub') && $('ck-drop') && !$('ck-drop').classList.contains('hidden')) { e.preventDefault(); startCheckup(files); }
+  });
+  (function setupWindowDrop() {
+    const ov = document.createElement('div'); ov.className = 'drop-overlay'; ov.textContent = 'Drop it to open it here';
+    document.body.appendChild(ov);
+    let depth = 0;
+    const hasFiles = (e) => [...((e.dataTransfer && e.dataTransfer.types) || [])].includes('Files');
+    const target = () => canTakeFiles() ? 'tool' : (visible('hub') && $('ck-drop') && !$('ck-drop').classList.contains('hidden')) ? 'check' : '';
+    window.addEventListener('dragenter', (e) => { if (!hasFiles(e) || !target()) return; depth++; ov.classList.add('on'); });
+    window.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) ov.classList.remove('on'); });
+    window.addEventListener('dragover', (e) => { if (hasFiles(e) && target()) e.preventDefault(); });
+    window.addEventListener('drop', (e) => {
+      depth = 0; ov.classList.remove('on');
+      if (!hasFiles(e)) return;
+      if ((e.target.closest && (e.target.closest('#drop') || e.target.closest('#ck-drop')))) return; // the drop zones handle their own
+      const t = target(); if (!t) return;
+      e.preventDefault();
+      const files = [...e.dataTransfer.files];
+      if (t === 'tool') handleFiles(files.filter(acceptsFile).length ? files.filter(acceptsFile) : files); else startCheckup(files);
+    });
+  })();
+  function addPasteHint() {
+    const pick = $('s-pick'); if (!pick || $('paste-hint')) return;
+    const p = document.createElement('p'); p.className = 'paste-hint'; p.id = 'paste-hint';
+    p.innerHTML = 'You can also paste a copied picture or screenshot with <kbd>Ctrl</kbd>+<kbd>V</kbd> (<kbd>⌘</kbd><kbd>V</kbd> on a Mac).';
+    pick.appendChild(p);
+  }
+
+  /* ---------- round 15: files shared from the phone's share sheet ---------- */
+  const SHARE_TOOLS = {
+    image: [['image-compress','Compress'],['image-resize','Resize'],['image-text','Add text'],['remove-background','Remove the background'],['blur-faces','Blur faces & plates'],['strip-metadata','Remove location data'],['image-collage','Make a collage'],['image-convert','Change the format']],
+    video: [['video-compress','Compress'],['video-trim','Trim'],['video-captions','Add captions'],['video-vertical','Make it 9:16 for Reels'],['video-gif','Make a GIF'],['extract-audio','Save the sound as MP3'],['video-mute','Remove the sound'],['strip-metadata','Remove location data']],
+    audio: [['ringtone','Make a ringtone'],['audiogram','Make an audiogram video'],['audio-denoise','Reduce background noise'],['audio-level','Even out the volume']],
+  };
+  async function showSharedFiles() {
+    const files = await takeHandoff();
+    history.replaceState(null, '', location.pathname);
+    if (!files.length) return;
+    const kinds = new Set(files.map((f) => isVideoFile(f) ? 'video' : (f.type || '').split('/')[0]));
+    const kind = kinds.size === 1 ? [...kinds][0] : '';
+    const list = (SHARE_TOOLS[kind] || []).filter(([id]) => TOOLS[id] && TOOL_PATHS[id] && (files.length === 1 || TOOLS[id].batch || TOOLS[id].combine));
+    const box = document.createElement('section'); box.className = 'shared-box'; box.setAttribute('aria-live', 'polite');
+    box.innerHTML = `<h2>${files.length === 1 ? 'You shared 1 file' : `You shared ${files.length} files`}</h2><p>${files.slice(0, 4).map((f) => escapeHtml(f.name)).join(', ')}${files.length > 4 ? '…' : ''}. What would you like to do?</p>
+      <div class="next-grid">${list.map(([id, label]) => `<button type="button" class="next-btn" data-share="${id}">${label} <span aria-hidden="true">→</span></button>`).join('')}${kind !== 'audio' ? `<button type="button" class="next-btn" data-share="check">Check what it gives away <span aria-hidden="true">→</span></button>` : ''}</div>`;
+    const hub = $('hub'); hub.insertBefore(box, hub.firstChild);
+    box.querySelectorAll('[data-share]').forEach((b) => b.addEventListener('click', async () => {
+      const id = b.dataset.share;
+      if (id === 'check') { box.remove(); startCheckup(files); $('checkup').scrollIntoView({ behavior: 'smooth' }); return; }
+      b.disabled = true;
+      try { await putHandoff(files); location.href = TOOL_PATHS[id] + '?handoff=1'; } catch (_) { b.disabled = false; }
+    }));
+  }
+
+
+  /* ---------- round 15: "link to this tool" snippet (for bloggers and teachers) ---------- */
+  function linkToThisTool() {
+    const faq = document.querySelector('.faq'); if (!faq || !document.body.dataset.tool || $('link-tool')) return;
+    const url = 'https://inkwelltools.com' + location.pathname;
+    const name = (document.querySelector('h1') || {}).textContent || document.title;
+    const plain = `<a href="${url}">${escapeHtml(name)}</a> (free, runs in your browser, by Inkwell Media)`;
+    const card = `<a href="${url}" style="display:inline-block;padding:12px 16px;border:1px solid #cca24e;border-radius:10px;background:#141019;color:#f3eee6;font:500 15px/1.4 system-ui,sans-serif;text-decoration:none">${escapeHtml(name)} <span style="color:#cca24e">→</span><br><span style="font-size:12.5px;color:#9a90ad">Free · nothing uploaded · Inkwell Media</span></a>`;
+    const d = document.createElement('details'); d.id = 'link-tool';
+    d.innerHTML = `<summary>Link to this tool from your site or class page</summary><p>Copy one of these into your web page, blog post or newsletter. Thank you for sharing it.</p>
+      <div class="field"><label for="lt-plain">A plain link</label><textarea id="lt-plain" rows="2" readonly>${escapeHtml(plain)}</textarea></div>
+      <div class="field"><label for="lt-card">A small button</label><textarea id="lt-card" rows="4" readonly>${escapeHtml(card)}</textarea></div>
+      <p class="note-soft" style="text-align:left">Preview: ${card}</p>
+      <button type="button" class="btn btn-ghost" id="lt-copy" style="width:auto">Copy the button</button>`;
+    faq.appendChild(d);
+    $('lt-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(card); $('lt-copy').textContent = 'Copied'; } catch (_) { $('lt-card').select(); } });
+    d.querySelectorAll('textarea').forEach((t) => t.addEventListener('focus', () => t.select()));
+  }
+  linkToThisTool();
   renderHub();
   const initialTool = document.body.dataset.tool;
   if (initialTool && TOOLS[initialTool]) {
@@ -2474,5 +3097,5 @@
       history.replaceState(null, '', location.pathname);
       takeHandoff().then(files => { if (files.length) handleFiles(files); });
     }
-  } else { $('tool').classList.add('hidden'); $('hub').classList.remove('hidden'); setupCheckup(); }
+  } else { $('tool').classList.add('hidden'); $('hub').classList.remove('hidden'); setupCheckup(); if (new URLSearchParams(location.search).has('shared')) showSharedFiles(); }
 

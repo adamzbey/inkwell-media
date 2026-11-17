@@ -43,6 +43,7 @@ mediaShell.innerHTML = `
         <div id="opts"></div>
         <button class="btn btn-primary" id="go" aria-describedby="tool-capacity">Go</button>
         <button class="btn btn-ghost" id="change">Choose a different file</button>
+        <div class="settings-row hidden" id="settings-row"><button type="button" class="linkbtn" id="set-link">Copy a link with these settings</button><span aria-hidden="true">·</span><button type="button" class="linkbtn" id="set-reset">Reset to defaults</button><span class="set-msg" id="set-msg" aria-live="polite"></span></div>
         <div id="ready-warn"></div>
       </div>
 
@@ -60,6 +61,7 @@ mediaShell.innerHTML = `
         <p class="prog-note" id="w-note">Working on your device.</p>
         <div class="batch-progress hidden" id="w-files" aria-live="polite"></div>
         <div class="elapsed" id="w-elapsed"></div>
+        <button class="btn btn-ghost" id="w-cancel" type="button">Stop</button>
       </div>
 
       <div id="s-done" class="hidden">
@@ -69,6 +71,7 @@ mediaShell.innerHTML = `
           <div class="sizes"><span class="from" id="d-from">—</span><span class="arrow">→</span><span class="to" id="d-to">—</span></div>
         </div>
         <button class="btn btn-primary" id="download">Download</button>
+        <button class="btn btn-ghost hidden" id="share-btn" type="button">Share…</button>
         <button class="btn btn-ghost" id="again">Do another</button>
         <div id="done-note"></div>
         <div id="d-next"></div>
