@@ -294,3 +294,41 @@
   .palette-swatches button b { display:block; padding:6px 4px; font-weight:500; font-variant-numeric:tabular-nums; }
   .live-preview { width:100%; border-radius:12px; margin:6px 0 14px; display:block; background:repeating-conic-gradient(#2a2140 0 25%, #1e1830 0 50%) 50%/20px 20px; }
   .eta { margin-left:6px; }
+
+  /* ---------- Sherpa (round 16) ---------- */
+  .sherpa-m { margin:16px 0 12px; padding:16px 14px 12px; border-radius:12px; background:rgba(204,162,78,0.06); border:1px solid var(--brass-line); }
+  .sherpa-m-head h3 { font-family:'Fraunces',serif; font-weight:500; font-size:20px; margin:4px 0 4px; }
+  .sherpa-m-head p { color:var(--muted); font-size:14px; margin:0 0 12px; }
+  .sherpa-dests { display:flex; flex-wrap:wrap; gap:6px; }
+  .sherpa-dest { font:inherit; font-size:13.5px; color:var(--paper); background:var(--ink-2); border:1px solid rgba(255,255,255,0.10); border-radius:999px; padding:7px 13px; cursor:pointer; }
+  .sherpa-dest:hover { border-color:var(--brass-line); }
+  .sherpa-dest[aria-pressed="true"] { background:var(--brass); color:#1a1305; border-color:var(--brass); font-weight:600; }
+  .sherpa-file { margin-top:12px; }
+  .sherpa-list, .sherpa-plan { list-style:none; padding:0; margin:6px 0 0; display:grid; gap:8px; }
+  .sherpa-plan { list-style:decimal; padding-left:20px; }
+  .sherpa-list li, .sherpa-plan li { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; justify-content:space-between; padding:10px 12px; border-radius:10px; background:rgba(255,255,255,0.03); font-size:14px; }
+  .sherpa-plan li { display:list-item; }
+  .sherpa-plan li .next-btn { display:block; margin-top:6px; }
+  .sherpa-list li.is-warn { background:rgba(224,138,122,0.10); border:1px solid rgba(224,138,122,0.28); }
+  .sherpa-list li.is-ok { color:var(--good); }
+  .sherpa-list .next-btn { flex:none; }
+  .sherpa-ask { margin-top:16px; }
+  .sherpa-field { display:flex; flex-direction:column; gap:6px; font-size:13.5px; margin-top:10px; }
+  .sherpa-field > span { font-weight:600; color:var(--paper); }
+  .sherpa-field textarea, .sherpa-field input, .sherpa-field select { font:inherit; font-size:14px; color:var(--paper); background:var(--ink-2); border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:10px 12px; width:100%; max-width:520px; box-sizing:border-box; }
+  .sherpa-ask textarea { max-width:none; resize:vertical; }
+  .sherpa-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; }
+  .sherpa-btn { font:inherit; font-size:14px; color:var(--paper); background:var(--ink-2); border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:9px 14px; cursor:pointer; }
+  .sherpa-btn-primary { background:var(--brass); border-color:var(--brass); color:#1a1305; font-weight:600; }
+  .sherpa-btn:disabled { opacity:.55; cursor:progress; }
+  .sherpa-link { background:none; border:0; padding:0; font:inherit; font-size:13px; color:var(--brass); text-decoration:underline; cursor:pointer; }
+  .sherpa-small { font-size:13px; margin:8px 0 0; }
+  .sherpa-muted { color:var(--muted); }
+  .sherpa-small a { color:var(--brass); }
+  .sherpa-peek { background:var(--ink-2); border-radius:10px; padding:10px; font:12px/1.45 ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; max-height:240px; overflow:auto; margin:8px 0 0; }
+  .sherpa-keys { margin-top:12px; border:1px solid rgba(255,255,255,0.10); border-radius:10px; padding:8px 12px; }
+  .sherpa-keys > summary { cursor:pointer; font-size:13.5px; font-weight:600; color:var(--brass); }
+  .sherpa-status { font-size:13px; color:var(--muted); }
+  .sherpa-answer { margin-top:12px; padding:12px 14px; border-radius:10px; border:1px solid var(--brass-line); background:rgba(204,162,78,0.07); }
+  .sherpa-reply { margin:0 0 6px; font-size:14.5px; }
+  .sherpa-err { color:#e08a7a; font-size:14px; margin:10px 0 0; }

@@ -5,7 +5,7 @@ mediaShell.innerHTML = `
       <div class="checkup-head">
         <span class="checkup-kicker">Free check-up</span>
         <h2 id="checkup-title">What's hiding in your photo or video?</h2>
-        <p>Drop a photo or video to see what it gives away and what might stop it opening or sending: your location, the camera, an awkward format, or a size that's too big to email. Nothing is uploaded.</p>
+        <p>Drop a photo or video to see what it gives away and what might stop it opening or sending: your location, the camera, an awkward format, or a size that's too big to email. Then tell Sherpa where it's going and it says what to change. Nothing is uploaded.</p>
       </div>
       <button type="button" class="drop drop-compact" id="ck-drop">
         <svg viewBox="0 0 24 24" fill="none" stroke="#cca24e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>

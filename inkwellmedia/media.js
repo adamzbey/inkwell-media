@@ -1,3 +1,4 @@
+import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from './sherpa.js';
   // Fully self-hosted engine (same origin) — no esm.sh/unpkg, no cross-origin worker issues.
   const FFmpeg = (window.FFmpegWASM || {}).FFmpeg;
   const fetchFile = async (f) => new Uint8Array(await f.arrayBuffer());
@@ -2783,9 +2784,10 @@
   }
   async function checkFile(file) {
     const findings = [];
-    let info = '';
+    let info = '', meta = null;
     if (isVideoFile(file)) {
       const m = await readVideoMeta(file);
+      meta = { kind: 'video', name: file.name, format: m.format, codec: m.codec, width: m.width || 0, height: m.height || 0, duration: m.duration || 0, size: file.size, gps: !!m.location };
       info = [m.format, m.codec, m.width ? `${m.width} × ${m.height}` : '', m.duration ? fmtDuration(m.duration) : '', fmtSize(file.size)].filter(Boolean).join(' · ');
       if (m.location) findings.push({ text:`Contains the location where it was filmed (near ${fmtCoord(m.location.lat)}, ${fmtCoord(m.location.lon)}). Anyone you send it to can see it.`, fix:'clean', on:true, warn:true });
       if (m.format === 'MOV') findings.push({ text:'Saved as MOV (Apple’s format). Some Windows PCs, Android phones and upload forms won’t take it.', fix:'mp4', on:true });
@@ -2799,6 +2801,7 @@
       let w = 0, h = 0;
       try { const img = await loadImage(file); w = img.width; h = img.height; if (img.close) img.close(); } catch (_) {}
       const dims = w ? `${w} × ${h}` : '';
+      meta = { kind: 'image', name: file.name, format: m.format, width: w, height: h, size: file.size, gps: !!m.gps };
       info = [m.format, dims, fmtSize(file.size)].filter(Boolean).join(' · ');
       if (m.gps) findings.push({ text:`Contains your GPS location (near ${fmtCoord(m.gps.lat)}, ${fmtCoord(m.gps.lon)}). Anyone you send it to can see where it was taken.`, fix:'clean', on:true, warn:true });
       const cam = [m.make, m.model].filter(Boolean).join(' ').replace(/^(\w+) \1 /i, '$1 ');
@@ -2808,7 +2811,7 @@
       else if (file.size > 5 * 1048576 || Math.max(w, h) > 4000) findings.push({ text:`Bigger than most websites and apps need (${[dims, fmtSize(file.size)].filter(Boolean).join(', ')}). Some upload forms will turn it away.`, fix:'shrink', on: file.size > 10 * 1048576 });
       if (m.format === 'PNG' && file.size > 2 * 1048576 && !(await hasTransparency(file))) findings.push({ text:'Saved as PNG, which makes photos large. As a JPG it would be much smaller and look the same.', fix:'jpg', on:false });
     }
-    return { file, findings, info };
+    return { file, findings, info, meta };
   }
   let ckEntries = [];
   function renderCheckup() {
@@ -2825,10 +2828,45 @@
       return `<div class="ck-file"><div class="ck-name">${escapeHtml(e.file.name)}</div><div class="ck-info">${escapeHtml(e.info)}</div>${items || '<p class="ck-ok">✓ Looks good: no location data, a format that opens almost everywhere, and a sensible size.</p>'}</div>`;
     }).join('');
     const busy = ckEntries.some(e => e.pending);
+    if (!busy && ckEntries.some(e => e.meta)) { box.insertAdjacentHTML('beforeend', sherpaHtml()); wireSherpa(); }
     if (!busy) box.insertAdjacentHTML('beforeend', (fixable ? `<button class="btn btn-primary" id="ck-fix" type="button">Fix the ticked items</button><p class="note-soft">Fixed copies download to your device. Your originals aren’t changed.</p><div id="ck-msg" class="cap-msg"></div>` : '') + `<button class="btn btn-ghost" id="ck-reset" type="button">Check other files</button>`);
     box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => { ckEntries[+cb.dataset.e].findings[+cb.dataset.f].on = cb.checked; }));
     if ($('ck-fix')) $('ck-fix').addEventListener('click', runCheckupFixes);
     if ($('ck-reset')) $('ck-reset').addEventListener('click', () => { ckEntries = []; box.innerHTML = ''; box.classList.add('hidden'); $('ck-file').value = ''; $('ck-drop').classList.remove('hidden'); });
+  }
+  /* ---------- Sherpa (round 16): where is it going? + optional AI with the visitor's own key ---------- */
+  const SH_KEY = 'inkwellMedia.sherpaDest';
+  let shDest = ''; try { shDest = localStorage.getItem(SH_KEY) || ''; } catch (_) {}
+  function sherpaHtml() {
+    return `<div class="sherpa-m" id="sh-m"><div class="sherpa-m-head"><span class="checkup-kicker">Sherpa</span><h3>Where is it going?</h3><p>Pick where you'll send or post it and Sherpa tells you what to change first.</p></div>
+      <div class="sherpa-dests" role="group" aria-label="Where is it going">${SHERPA_DESTS.map(([id, label]) => `<button type="button" class="sherpa-dest" data-dest="${id}" aria-pressed="${id === shDest}">${label}</button>`).join('')}</div>
+      <div id="sh-plan" aria-live="polite"></div><div id="sh-ask"></div></div>`;
+  }
+  function drawSherpaPlan() {
+    const slot = $('sh-plan'); if (!slot) return;
+    document.querySelectorAll('.sherpa-dest').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.dest === shDest)));
+    if (!shDest) { slot.innerHTML = ''; return; }
+    const entries = ckEntries.filter(e => e.meta);
+    slot.innerHTML = entries.map((e, ei) => {
+      const items = sherpaPlanFor(shDest, e.meta);
+      return `<div class="sherpa-file">${entries.length > 1 ? `<div class="ck-name">${escapeHtml(e.file.name)}</div>` : ''}<ul class="sherpa-list">${items.map(it => `<li class="${it.warn ? 'is-warn' : it.ok ? 'is-ok' : ''}"><span>${escapeHtml(it.text)}</span>${it.path ? `<button type="button" class="next-btn" data-shopen="${it.path}" data-shfile="${ckEntries.indexOf(e)}">${escapeHtml(it.label)} →</button>` : ''}</li>`).join('')}</ul></div>`;
+    }).join('');
+    slot.querySelectorAll('[data-shopen]').forEach(b => b.addEventListener('click', () => sherpaOpen(b.dataset.shopen, [ckEntries[+b.dataset.shfile].file], b)));
+  }
+  async function sherpaOpen(path, files, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Opening…'; }
+    try { await putHandoff(files); location.href = path + '?handoff=1'; }
+    catch (_) { if (btn) { btn.disabled = false; btn.textContent = 'Couldn’t pass it along. Open the tool and add the file there.'; } }
+  }
+  function wireSherpa() {
+    document.querySelectorAll('.sherpa-dest').forEach(b => b.addEventListener('click', () => {
+      shDest = shDest === b.dataset.dest ? '' : b.dataset.dest;
+      try { localStorage.setItem(SH_KEY, shDest); } catch (_) {}
+      drawSherpaPlan();
+    }));
+    drawSherpaPlan();
+    const files = () => ckEntries.filter(e => e.meta).map(e => e.file);
+    mountMediaAsk($('sh-ask'), { getMetas: () => ckEntries.filter(e => e.meta).map(e => e.meta), open: (path) => sherpaOpen(path, files()) });
   }
   async function runCheckupFixes() {
     checkupFixes.clear();
