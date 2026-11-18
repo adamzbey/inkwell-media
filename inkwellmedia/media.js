@@ -1423,6 +1423,7 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
   };
   function limitsFor(id){
     if (LIMITS_BY_ID[id]) return LIMITS_BY_ID[id];
+    if (id === 'recipe') return RECIPES[recipeId] && RECIPES[recipeId].kind === 'video' ? { note:'Short clips work best. Large or high-resolution videos need more memory; a desktop is recommended.', softMB:100, hardMB:350 } : { note:'Large, high-resolution photos need more memory.', softMB:40, hardMB:150 };
     const eng = (TOOLS[id]||{}).engine;
     if (eng === 'ffmpeg') return { note:'Short clips work best. Large or high-resolution videos need more memory; a desktop is recommended.', softMB:100, hardMB:350 };
     if (eng === 'mixed') return { note:'Photos are quick. Videos take longer and need more memory; a desktop is recommended for them.', softMB:100, hardMB:350 };
@@ -2647,7 +2648,7 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     const limits = limitsFor(id);
     $('capacity-recommended').textContent = `Under ~${mbLabel(limits.softMB)} per file`;
     $('capacity-maximum').textContent = `${mbLabel(limits.hardMB)} per file`;
-    $('capacity-note').textContent = `Files stay on your device. Available browser memory may limit processing below the maximum. ${limits.note}${current.batch ? ' Batches run one image at a time; the final ZIP also needs memory. Try fewer images if a batch fails.' : ' Choose one file at a time.'}`;
+    $('capacity-note').textContent = `Files stay on your device. Available browser memory may limit processing below the maximum. ${limits.note}${currentId === 'recipe' ? ' Several files run one at a time; the final ZIP also needs memory.' : current.batch ? ' Batches run one image at a time; the final ZIP also needs memory. Try fewer images if a batch fails.' : ' Choose one file at a time.'}`;
     $('ready-warn').innerHTML=''; $('done-note').innerHTML='';
     document.querySelector('.seo-intro')?.classList.remove('hidden');
     document.querySelector('.faq')?.classList.remove('hidden');
