@@ -133,7 +133,7 @@ export function planFor(dest, m) {
 const SYSTEM = `You are Sherpa, the guide inside Inkwell Media, free photo, video and audio tools that run in the browser.
 The user says what they want to do with their file(s). You get each file's details (type, format, size, pixel size, length) but never the file itself.
 Answer ONLY with one JSON object, no markdown:
-{"reply": "plain-English advice, at most 70 words, no markdown",
+{"reply": "plain-English advice for a non-technical person, at most 60 words, no markdown, no jargon like codec, bitrate, EXIF or aspect ratio unless you explain it in a few words",
  "steps": [ {"path": "/tool-path/", "why": "one short line"} , ... at most 4, in the order to do them ] }
 Use only these tool paths (path: what it does):
 {catalog}
@@ -153,6 +153,7 @@ export function mountMediaAsk(el, { getMetas, open }) {
         <input type="text" class="sherpa-q" aria-label="What are you trying to do?" placeholder="e.g. Post this on my Etsy listing and Instagram">
         <button type="submit" class="sherpa-btn sherpa-btn-primary" data-a="ask">Ask</button>
       </form>
+      <p class="sherpa-try"><span>Try:</span> ${['Post it on Instagram', 'Email it to a client', 'Make it load fast on my website'].map((x) => `<button type="button" class="sherpa-link" data-ex="${x}">${x}</button>`).join(' · ')}</p>
       <div class="sherpa-out" aria-live="polite"></div>
       <p class="sherpa-small sherpa-muted"><span class="sherpa-mode"></span> <button type="button" class="sherpa-link" data-a="settings"></button> · <button type="button" class="sherpa-link" data-a="peek">What's sent?</button></p>
       <pre class="sherpa-peek hidden"></pre>
@@ -168,6 +169,7 @@ export function mountMediaAsk(el, { getMetas, open }) {
   el.querySelector('[data-a=settings]').addEventListener('click', () => settings.classList.toggle('hidden'));
   el.querySelector('[data-a=peek]').addEventListener('click', () => { const pre = el.querySelector('.sherpa-peek'); pre.textContent = `Only file details are sent, never the file:\n\n${buildRequest(getMetas(), q.value.trim() || '(your request)').user}`; pre.classList.toggle('hidden'); });
   el.querySelector('.sherpa-bar').addEventListener('submit', (e) => { e.preventDefault(); ask(); });
+  el.querySelectorAll('[data-ex]').forEach((b) => b.addEventListener('click', () => { q.value = b.dataset.ex; ask(); }));
   async function ask() {
     const text = q.value.trim();
     if (!text) { q.focus(); return; }

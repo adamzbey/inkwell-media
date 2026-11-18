@@ -346,3 +346,9 @@
   .sherpa-fine { font-size:12px; opacity:.85; margin-top:4px; }
   .sherpa-status:empty { display:none; }
   .sherpa-list li { padding:9px 12px; }
+
+  .sherpa-try { margin:8px 0 0; font-size:13px; color:var(--muted); }
+  .sherpa-howto { margin:4px 0 0; padding-left:20px; font-size:13px; color:var(--muted); }
+  .sherpa-howto li { margin:2px 0; } .sherpa-howto a { color:var(--brass); }
+  .sherpa-hint { text-align:center; font-size:13.5px; color:var(--muted); margin:14px 0 0; }
+  .sherpa-hint a { color:var(--brass); }

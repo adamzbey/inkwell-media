@@ -95,6 +95,7 @@ mediaShell.innerHTML = `
 
       <div id="err-slot"></div>
     </div>
+    <p class="sherpa-hint" id="sherpa-hint">Not sure this is the right tool? <a href="/inkwellmedia/#checkup" id="sherpa-hint-link">Ask Sherpa where your file is going →</a></p>
   </div>
 
   <div id="contact" class="hidden">

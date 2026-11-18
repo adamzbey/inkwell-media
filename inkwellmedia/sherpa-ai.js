@@ -11,6 +11,8 @@ export const PROVIDERS = {
     keyHint: 'Free key from Google AI Studio. Starts with "AIza".',
     note: 'On the free tier, Google may use what you send to improve its products.',
     fallback: 'gemini-2.5-flash',
+    steps: ['Open <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a> and sign in with any Google account.', 'Click <b>Create API key</b>.', 'Copy the key, paste it above and click <b>Save</b>.'],
+    time: 'About 2 minutes · free · no card needed',
   },
   anthropic: {
     label: 'Anthropic Claude',
@@ -18,6 +20,8 @@ export const PROVIDERS = {
     keyHint: 'Key from the Anthropic Console. Starts with "sk-ant-". Paid per use.',
     note: 'Paid per use from your Anthropic credit, usually a fraction of a cent a question.',
     fallback: 'claude-haiku-4-5',
+    steps: ['Open the <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic Console</a> and add a few dollars of credit under Billing.', 'Under API keys, click <b>Create key</b> (choose "Somewhere else" if asked).', 'Copy the key, paste it above and click <b>Save</b>.'],
+    time: 'Paid per use: a question costs a fraction of a cent',
   },
   openai: {
     label: 'OpenAI',
@@ -25,6 +29,8 @@ export const PROVIDERS = {
     keyHint: 'Key from the OpenAI platform. Starts with "sk-". Paid per use.',
     note: 'Paid per use from your OpenAI credit, usually a fraction of a cent a question.',
     fallback: 'gpt-4o-mini',
+    steps: ['Open the <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI platform</a> and add credit under Billing.', 'Click <b>Create new secret key</b>.', 'Copy the key, paste it above and click <b>Save</b>.'],
+    time: 'Paid per use: a question costs a fraction of a cent',
   },
 };
 
@@ -159,7 +165,8 @@ export function mountKeyBox(el, { onChange } = {}) {
           <input type="password" data-k="key" autocomplete="off" spellcheck="false" aria-label="Your API key" placeholder="Paste your API key" value="${esc(key)}">
           <button type="button" class="sherpa-btn sherpa-btn-primary" data-k="save">${key ? 'Saved ✓' : 'Save'}</button>
         </div>
-        <p class="sherpa-small sherpa-muted"><a href="${P.keyUrl}" target="_blank" rel="noopener">Get a ${p === 'gemini' ? 'free ' : ''}key →</a> · Kept only in this browser${key ? ' · <button type="button" class="sherpa-link" data-k="forget">Forget it</button>' : ''}</p>
+        ${key ? '' : `<p class="sherpa-small"><b>No key yet?</b> ${esc(P.time)}</p><ol class="sherpa-howto">${P.steps.map((x) => `<li>${x}</li>`).join('')}</ol>`}
+        <p class="sherpa-small sherpa-muted">Your key stays in this browser only${key ? ' · <button type="button" class="sherpa-link" data-k="forget">Forget it</button>' : ''}</p>
         <p class="sherpa-small sherpa-muted sherpa-fine">${esc(P.note)}</p>
         <p class="sherpa-status" data-k="status" aria-live="polite">${esc(msg)}</p>
       </div>`;

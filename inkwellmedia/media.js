@@ -3139,9 +3139,25 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
   const initialTool = document.body.dataset.tool;
   if (initialTool && TOOLS[initialTool]) {
     openTool(initialTool);
+    if (TOOLS[initialTool].noFile || initialTool === 'screen-record') $('sherpa-hint')?.classList.add('hidden');
     if (new URLSearchParams(location.search).has('handoff')) {
       history.replaceState(null, '', location.pathname);
       takeHandoff().then(files => { if (files.length) handleFiles(files); });
     }
-  } else { $('tool').classList.add('hidden'); $('hub').classList.remove('hidden'); setupCheckup(); if (new URLSearchParams(location.search).has('shared')) showSharedFiles(); }
+  } else {
+    $('tool').classList.add('hidden'); $('hub').classList.remove('hidden'); setupCheckup();
+    const qs = new URLSearchParams(location.search);
+    if (qs.has('shared')) showSharedFiles();
+    else if (qs.has('sherpa')) {
+      history.replaceState(null, '', location.pathname + '#checkup');
+      takeHandoff().then(files => { $('checkup').scrollIntoView({ behavior: 'smooth' }); if (files.length) startCheckup(files); });
+    } else if (location.hash === '#checkup') setTimeout(() => $('checkup')?.scrollIntoView({ behavior: 'smooth' }), 50);
+  }
+  // Tool pages: "Ask Sherpa" takes the chosen file to the check-up, where Sherpa asks where it's going
+  $('sherpa-hint-link')?.addEventListener('click', async (e) => {
+    const files = selectedFiles.filter(f => f && f.size);
+    if (!files.length) return;
+    e.preventDefault();
+    try { await putHandoff(files); location.href = '/inkwellmedia/?sherpa=1'; } catch (_) { location.href = '/inkwellmedia/#checkup'; }
+  });
 
