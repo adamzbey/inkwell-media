@@ -1700,6 +1700,66 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     $('sp-set').addEventListener('click', () => { const t = $('sp-media').currentTime || 0; $(inputId).value = fmtClock(t); $(inputId).dispatchEvent(new Event('input', { bubbles: true })); });
   }
 
+  /* ---------- round 17: recipes (several tools in one go) ---------- */
+  const RECIPES = {
+    etsy: { name:'Etsy listing photos', kind:'image', dest:'etsy', blurb:'2000 × 2000 on white, sharp enough for zoom', suffix:'etsy',
+      steps:[ ['image-resize', { 'r:rmode':'preset', 'rs-preset':'etsy-square', 'rs-fit':'fit', 'rs-bg':'#ffffff', 'rs-fmt':'jpg' }, 'Fit on a 2000 × 2000 white square (nothing is cut off)'],
+              ['image-compress', { 'r:q':'best' }, 'Compress, keeping it crisp'] ] },
+    shopify: { name:'Shopify product images', kind:'image', dest:'shopify', blurb:'2048 × 2048 squares that match', suffix:'shopify',
+      steps:[ ['image-resize', { 'r:rmode':'preset', 'rs-preset':'shopify', 'rs-fit':'fit', 'rs-bg':'#ffffff', 'rs-fmt':'jpg' }, 'Fit on a 2048 × 2048 white square'],
+              ['image-compress', { 'r:q':'balanced' }, 'Compress for a fast store'] ] },
+    'ig-post': { name:'Instagram posts', kind:'image', dest:'ig-post', blurb:'1080 × 1350, the tallest feed post', suffix:'instagram',
+      steps:[ ['image-resize', { 'r:rmode':'preset', 'rs-preset':'ig-portrait', 'rs-fit':'fill', 'rs-fmt':'jpg' }, 'Resize to 1080 × 1350 (trims the edges, centred)'],
+              ['image-compress', { 'r:q':'best' }, 'Compress, keeping it crisp'] ] },
+    email: { name:'Photos to email', kind:'image', dest:'email', blurb:'1600 px, a few hundred KB each', suffix:'email',
+      steps:[ ['image-resize', { 'r:rmode':'preset', 'rs-preset':'email', 'rs-fmt':'jpg' }, 'Shrink to 1600 px on the longest side'],
+              ['image-compress', { 'r:q':'balanced' }, 'Compress for small attachments'] ] },
+    website: { name:'Images for a website', kind:'image', dest:'website', blurb:'1600 px wide WebP that loads fast', suffix:'web',
+      steps:[ ['image-resize', { 'r:rmode':'width', 'maxw':'1600', 'rs-fmt':'webp' }, 'Fit within 1600 px wide, saved as WebP'],
+              ['image-compress', { 'r:q':'balanced' }, 'Compress for fast pages'] ] },
+    'whatsapp-video': { name:'Video for WhatsApp', kind:'video', dest:'whatsapp', blurb:'Under 16 MB, location removed', suffix:'whatsapp',
+      steps:[ ['strip-metadata', {}, 'Remove the location and camera details'],
+              ['video-compress', { 'r:vq':'w16' }, 'Shrink it under 16 MB'] ] },
+    'email-video': { name:'Video to email', kind:'video', dest:'email', blurb:'Under 18 MB so it fits a 25 MB limit', suffix:'email',
+      steps:[ ['strip-metadata', {}, 'Remove the location and camera details'],
+              ['video-compress', { 'r:vq':'e25' }, 'Shrink it to fit an email'] ] },
+    reels: { name:'Video for Reels & TikTok', kind:'video', dest:'reels', blurb:'9:16 with a blurred background, location removed', suffix:'reels',
+      steps:[ ['strip-metadata', {}, 'Remove the location and camera details'],
+              ['video-vertical', { 'vv-shape':'9x16', 'r:vvfill':'blur' }, 'Make it 9:16 with a soft blurred background'] ] },
+  };
+  let recipeId = '';
+  const recipeFor = (dest, kind) => Object.keys(RECIPES).find((k) => RECIPES[k].dest === dest && RECIPES[k].kind === kind);
+  function applyTo(host, obj) {
+    for (const [k, v] of Object.entries(obj || {})) {
+      let el;
+      if (k.startsWith('r:')) { el = [...host.querySelectorAll(`input[type=radio][name="${CSS.escape(k.slice(2))}"]`)].find((r) => r.value === v); if (el) el.checked = true; }
+      else { el = host.querySelector('#' + CSS.escape(k)); if (!el) continue; if (el.type === 'checkbox') el.checked = v === '1'; else el.value = v; }
+      if (el) { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }
+    }
+  }
+  function openRecipe(id) {
+    const r = RECIPES[id]; if (!r) return false;
+    recipeId = id;
+    const t = TOOLS.recipe;
+    t.name = 'Recipe: ' + r.name;
+    t.accept = r.kind === 'video' ? 'video/*' : 'image/*,.heic,.heif';
+    t.dropText = r.kind === 'video' ? 'Drop a video, or click to choose' : 'Drop photos, or click to choose';
+    t.dropSub = r.kind === 'video' ? 'MP4, MOV or WebM · short clips work best' : 'JPG, PNG, WebP or HEIC · several at once for a ZIP';
+    openTool('recipe');
+    $('recipe-pre')?.remove();
+    try { history.replaceState(null, '', '/inkwellmedia/?recipe=' + id); } catch (_) {}
+    $('s-pick').insertAdjacentHTML('afterbegin', `<div class="recipe-pre" id="recipe-pre">${recipeStepsHtml(r)}</div>`);
+    return true;
+  }
+  function recipeStepsHtml(r, done = -1) {
+    return `<p class="plabel">${r.steps.length} steps, done for you in order</p><ol class="recipe-steps">${r.steps.map((st, i) => `<li class="${i < done ? 'is-done' : i === done ? 'is-active' : ''}"><b>${escapeHtml(TOOLS[st[0]].name)}</b><span>${escapeHtml(st[2])}</span></li>`).join('')}</ol>`
+      + (r.kind === 'image' ? `<p class="note-soft" style="text-align:left">Location and camera details are removed too, because each picture is redrawn. Your originals aren’t changed.</p>` : `<p class="note-soft" style="text-align:left">Your original video isn’t changed.</p>`);
+  }
+  function recipesHtml() {
+    const card = (id) => { const r = RECIPES[id]; return `<button type="button" class="tool recipe-card" data-recipe="${id}"><span class="ic">${svg(r.kind === 'video' ? ICONS.vid : ICONS.img)}</span><span><span class="tname">${escapeHtml(r.name)}</span><span class="tblurb">${escapeHtml(r.blurb)} · ${r.steps.length} steps</span></span></button>`; };
+    return `<div class="grouphdr" id="recipes">Recipes: several steps in one go</div><div class="grid">${Object.keys(RECIPES).map(card).join('')}</div>`;
+  }
+
   const TOOLS = {
     'image-compress': {
       group:'Images', engine:'canvas', batch:true, name:'Compress image', blurb:'Shrink a JPG or PNG for email & web', icon:ICONS.img,
@@ -2445,6 +2505,45 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
         return { blob, name:`${base}-fixed.${extFor(type)}`, mime:type, compare:true };
       },
     },
+    'recipe': {
+      group:'Hidden', hidden:true, engine:'mixed', combine:true, name:'Recipe', blurb:'', icon:ICONS.check,
+      accept:'image/*', dropText:'Drop files', dropSub:'',
+      goLabel(files){ const r = RECIPES[recipeId]; return files.length > 1 ? `Run the recipe on ${files.length} ${r.kind === 'video' ? 'videos' : 'photos'}` : 'Run the recipe'; },
+      options(host){ host.innerHTML = recipeStepsHtml(RECIPES[recipeId]) + '<div id="recipe-host" class="recipe-host" hidden></div>'; },
+      async runAll(files){
+        const r = RECIPES[recipeId];
+        let host = $('recipe-host');
+        let cur = files.slice(); const notes = [];
+        $('w-files').innerHTML = `<div class="recipe-run">${recipeStepsHtml(r, 0)}</div>`; $('w-files').classList.remove('hidden');
+        const total = r.steps.length * cur.length; let doneUnits = 0;
+        for (let si = 0; si < r.steps.length; si++) {
+          const [tid, settings, label] = r.steps[si]; const tool = TOOLS[tid];
+          $('w-files').innerHTML = `<div class="recipe-run">${recipeStepsHtml(r, si)}</div>`;
+          { const fresh = host.cloneNode(false); host.replaceWith(fresh); host = fresh; } // a clean slate: no listeners left over from the last step
+          await tool.options(host, cur[0]); applyTo(host, settings);
+          if (tool.engine === 'ffmpeg' || (tool.engine === 'canvas' && cur.some(isVideoFile))) await ensureFfmpeg(() => { $('w-label').textContent = 'Loading the video engine…'; });
+          const outs = [];
+          for (let fi = 0; fi < cur.length; fi++) {
+            if (cancelRequested) throw new Error('cancelled');
+            $('w-label').textContent = `Step ${si + 1} of ${r.steps.length}: ${tool.name}${cur.length > 1 ? ` · ${fi + 1} of ${cur.length}` : ''}`;
+            $('w-note').textContent = label;
+            setProgress(Math.round(doneUnits / total * 100));
+            const res = await tool.run(cur[fi]);
+            outs.push(new File([res.blob], res.name, { type: res.mime || res.blob.type }));
+            if (res.note && si === r.steps.length - 1) notes.push(res.note);
+            doneUnits++; setProgress(Math.round(doneUnits / total * 100));
+          }
+          cur = outs;
+        }
+        host.innerHTML = '';
+        const named = cur.map((f, i) => { const base = files[i].name.replace(/\.[^.]+$/, ''); const ext = (f.name.match(/\.[^.]+$/) || ['.' + extFor(f.type)])[0]; return { name: `${base}-${r.suffix}${ext}`, blob: f }; });
+        const perFile = named.map((o, i) => ({ name: o.name, inBytes: files[i].size, outBytes: o.blob.size, blob: o.blob }));
+        notes.unshift(`Did ${r.steps.length} steps: ${r.steps.map((st) => TOOLS[st[0]].name.toLowerCase()).join(', then ')}.`);
+        if (named.length === 1) return { blob: named[0].blob, name: named[0].name, mime: named[0].blob.type, compare: true, notes, original: files[0], outputs: named };
+        const zip = await createZip(named.map((o) => ({ name: o.name, blob: o.blob })));
+        return { blob: zip, name: `inkwell-${r.suffix}-${named.length}-files.zip`, mime: 'application/zip', compare: false, batchCount: named.length, batchOutputBytes: named.reduce((n, o) => n + o.blob.size, 0), notes, outputs: named, perFile };
+      },
+    },
   };
 
   /* ---------- hub rendering ---------- */
@@ -2491,7 +2590,7 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
   function renderHub() {
     const groups = {};
     for (const id in TOOLS) { const t = TOOLS[id]; if (t.hidden) continue; (groups[t.group] = groups[t.group] || []).push([id,t]); }
-    let html = '';
+    let html = recipesHtml();
     for (const g in groups) {
       html += `<div class="grouphdr">${g}</div><div class="grid">`;
       for (const [id,t] of groups[g]) {
@@ -2500,6 +2599,7 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
       html += `</div>`;
     }
     $('hub-groups').innerHTML = html;
+    $('hub-groups').querySelectorAll('[data-recipe]').forEach((b) => b.addEventListener('click', () => openRecipe(b.dataset.recipe)));
   }
 
   /* ---------- tool flow ---------- */
@@ -2568,6 +2668,7 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
   function backToHub(){
     if (document.body.dataset.tool) { window.location.href = '/'; return; }
     $('tool').classList.add('hidden'); $('contact').classList.add('hidden'); $('hub').classList.remove('hidden'); resetSelection();
+    if (recipeId) { recipeId = ''; try { history.replaceState(null, '', '/inkwellmedia/'); } catch (_) {} }
     document.querySelector('.seo-intro')?.classList.remove('hidden');
     document.querySelector('.faq')?.classList.remove('hidden');
   }
@@ -2597,7 +2698,8 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     const noun = files.every(f => /^image\//.test(f.type) || /\.(heic|heif)$/i.test(f.name)) ? 'images' : 'files';
     $('r-name').textContent = files.length > 1 ? `${files.length} ${noun} selected` : files[0].name;
     $('r-size').textContent = files.length > 1 ? `${fmtSize(totalBytes)} total · processed one at a time` : fmtSize(files[0].size);
-    $('go').textContent = current.combine ? `${current.name} (${files.length})` : files.length > 1 ? `${current.name} — ${files.length} ${noun}` : current.name;
+    $('recipe-pre')?.remove();
+    $('go').textContent = current.goLabel ? current.goLabel(files) : current.combine ? `${current.name} (${files.length})` : files.length > 1 ? `${current.name} — ${files.length} ${noun}` : current.name;
     $('go').disabled = true; show('s-ready');
     try { await current.options($('opts'), files[0]); $('go').disabled = !!(current.canGo && !current.canGo(files)); afterOptions(); }
     catch (error) { showErr("Couldn't open this file", 'Try a standard JPG, PNG, WebP, HEIC, MP4 or MOV file.'); console.error(error); }
@@ -2609,9 +2711,9 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
   }
 
   $('change').addEventListener('click', () => { resetSelection(); show('s-pick'); });
-  $('again').addEventListener('click', () => { if (currentId === 'checkup-fix') { backToHub(); return; } if (current && current.noFile) { openTool(currentId); return; } resetSelection(); show('s-pick'); });
+  $('again').addEventListener('click', () => { if (currentId === 'checkup-fix') { backToHub(); return; } if (currentId === 'recipe' && recipeId) { openRecipe(recipeId); return; } if (current && current.noFile) { openTool(currentId); return; } resetSelection(); show('s-pick'); });
 
-  function renderResult({ blob, name, mime, compare, inputBytes, batchCount=0, batchOutputBytes=0, notes=[], outputs=[] }) {
+  function renderResult({ blob, name, mime, compare, inputBytes, batchCount=0, batchOutputBytes=0, notes=[], outputs=[], original=null, perFile=null }) {
     if (outUrl) URL.revokeObjectURL(outUrl);
     outUrl = URL.createObjectURL(blob); outName = name;
     window.__inkwellMediaLast = { name, url: outUrl }; // read by the automated checks
@@ -2640,9 +2742,60 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     }
     $('download').textContent = batchCount ? 'Download ZIP' : 'Download';
     lastOutputs = outputs.length ? outputs : [{ name, blob }];
+    if (!batchCount && original && mime.startsWith('image/') && COMPARE_TOOLS.has(currentId)) setupCompare(original, outUrl);
+    if (batchCount && perFile && perFile.length) renderPerFile(perFile);
     setupShare(lastOutputs);
     renderNextSteps(lastOutputs);
-    show('s-done'); maybeShowCapture();
+    show('s-done'); celebrate(); maybeShowCapture();
+    try {
+      if (window.InkwellPlus) window.InkwellPlus.recordJob({ app: 'Media', tool: current.name, url: currentId === 'recipe' ? '/inkwellmedia/?recipe=' + recipeId : (TOOL_PATHS[currentId] || location.pathname), outputs: lastOutputs });
+    } catch (_) {}
+  }
+
+  /* ---------- round 17: before/after slider, each file in a batch, a small finish moment ---------- */
+  const COMPARE_TOOLS = new Set(['image-compress','image-convert','image-to-size','image-resize','image-watermark','blur-faces','remove-background','image-text','checkup-fix','recipe','heic-jpg']);
+  function setupCompare(original, afterUrl) {
+    const slot = $('d-preview-slot');
+    const beforeUrl = URL.createObjectURL(original);
+    const probe = (src) => new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+    Promise.all([probe(beforeUrl), probe(afterUrl)]).then(([b, a]) => {
+      if (!b || !a || outUrl !== afterUrl) { URL.revokeObjectURL(beforeUrl); return; }
+      const rb = b.naturalWidth / b.naturalHeight, ra = a.naturalWidth / a.naturalHeight;
+      if (Math.abs(rb - ra) / ra > 0.02) { URL.revokeObjectURL(beforeUrl); return; }
+      slot.innerHTML = `<div class="ba" id="ba" style="--pos:50%;aspect-ratio:${a.naturalWidth} / ${a.naturalHeight}"><div class="ba-stage" id="ba-stage">
+        <img class="ba-img ba-after checkerboard" src="${afterUrl}" alt="Your result" draggable="false"/>
+        <img class="ba-img ba-before" src="${beforeUrl}" alt="Your original" draggable="false"/>
+        <span class="ba-line" aria-hidden="true"><span class="ba-knob"></span></span>
+        <span class="ba-tag ba-tag-l" aria-hidden="true">Before</span><span class="ba-tag ba-tag-r" aria-hidden="true">After</span>
+        <input type="range" class="ba-range" id="ba-range" min="0" max="100" value="50" aria-label="Compare before and after. Lower shows more of the result, higher shows more of the original." />
+      </div></div><div class="ba-tools"><button type="button" class="linkbtn" id="ba-zoom">Compare at full size</button></div>`;
+      const box = $('ba'), stage = $('ba-stage'), range = $('ba-range');
+      const set = (v) => { box.style.setProperty('--pos', v + '%'); range.setAttribute('aria-valuetext', `${Math.round(v)}% original`); };
+      range.addEventListener('input', () => set(range.value)); set(50);
+      $('ba-zoom').addEventListener('click', () => {
+        const full = box.classList.toggle('ba-full');
+        stage.style.width = full ? a.naturalWidth + 'px' : ''; stage.style.height = full ? a.naturalHeight + 'px' : '';
+        $('ba-zoom').textContent = full ? 'Fit to the screen' : 'Compare at full size';
+      });
+    });
+  }
+  function renderPerFile(rows) {
+    const slot = $('d-preview-slot');
+    const many = rows.length > 6;
+    slot.insertAdjacentHTML('beforeend', `<details class="perfile"${many ? '' : ' open'}><summary>Each file (${rows.length})</summary><div class="perfile-rows">${rows.map((r, i) => {
+      const d = r.inBytes ? Math.round((1 - r.outBytes / r.inBytes) * 100) : 0;
+      const change = d > 0 ? `<span class="pf-good">${d}% smaller</span>` : d < 0 ? `${Math.abs(d)}% larger` : 'same size';
+      return `<div class="pf-row"><span class="pf-name">${escapeHtml(r.name)}</span><span class="pf-size">${fmtSize(r.inBytes)} → ${fmtSize(r.outBytes)} · ${change}</span><button type="button" class="linkbtn" data-pf="${i}">Download</button></div>`;
+    }).join('')}</div></details>`);
+    slot.querySelectorAll('[data-pf]').forEach((b) => b.addEventListener('click', () => {
+      const r = rows[+b.dataset.pf]; const u = URL.createObjectURL(r.blob); const a = document.createElement('a'); a.href = u; a.download = r.name; a.click(); setTimeout(() => URL.revokeObjectURL(u), 4000);
+    }));
+  }
+  function celebrate() {
+    const res = document.querySelector('#s-done .result'); if (!res) return;
+    if (!$('done-check')) res.insertAdjacentHTML('afterbegin', `<svg id="done-check" class="done-check" viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="23"/><path d="M15 27l7 7 15-16"/></svg>`);
+    res.classList.remove('celebrate'); void res.offsetWidth; res.classList.add('celebrate');
+    $('download')?.focus({ preventScroll: true });
   }
 
   let cancelRequested = false;
@@ -2663,7 +2816,7 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     try {
       if (current.combine) {
         const result = await current.runAll(selectedFiles.slice()); setProgress(100);
-        deliver({ ...result, inputBytes, notes: result.note ? [result.note] : [] });
+        deliver({ ...result, inputBytes, notes: result.notes || (result.note ? [result.note] : []) });
       } else if (current.batch && selectedFiles.length > 1) {
         const entries = [], notes = [];
         $('w-files').innerHTML = selectedFiles.map((file,index) => `<div class="batch-file" data-file-index="${index}"><span class="batch-file-name">${file.name.replace(/[<>]/g,'')}</span><span class="batch-file-state">Waiting</span></div>`).join('');
@@ -2675,7 +2828,7 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
           row.classList.add('is-active'); row.querySelector('.batch-file-state').textContent = 'Processing';
           $('w-label').textContent = `Processing ${index+1} of ${selectedFiles.length}`; $('w-note').textContent = file.name;
           setProgress(Math.round(index / selectedFiles.length * 100));
-          const result = await current.run(file); entries.push({ name:result.name, blob:result.blob, mime:result.mime });
+          const result = await current.run(file); entries.push({ name:result.name, blob:result.blob, mime:result.mime, inBytes:file.size });
           if (result.note) notes.push(result.note);
           row.classList.remove('is-active'); row.classList.add('is-done'); row.querySelector('.batch-file-state').textContent = 'Done';
           setProgress(Math.round((index+1) / selectedFiles.length * 100));
@@ -2685,10 +2838,10 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
         const batchOutputBytes = entries.reduce((sum,entry) => sum + entry.blob.size, 0);
         const zipLabel = currentId === 'checkup-fix' ? 'fixed' : currentId === 'strip-metadata' ? 'clean' : currentId.replace('image-','');
         if (currentId === 'strip-metadata') notes.unshift(`Found and removed location or camera details in ${notes.filter(n => n.startsWith('Removed from')).length} of ${entries.length} files.`);
-        deliver({ blob, name:`inkwell-${zipLabel}-${entries.length}-files.zip`, mime:'application/zip', compare:false, inputBytes, batchCount:entries.length, batchOutputBytes, notes, outputs: entries.map(e => ({ name:e.name, blob:e.blob })) });
+        deliver({ blob, name:`inkwell-${zipLabel}-${entries.length}-files.zip`, mime:'application/zip', compare:false, inputBytes, batchCount:entries.length, batchOutputBytes, notes, outputs: entries.map(e => ({ name:e.name, blob:e.blob })), perFile: entries.map(e => ({ name:e.name, inBytes:e.inBytes, outBytes:e.blob.size, blob:e.blob })) });
       } else {
         const result = await current.run(selectedFiles[0]); setProgress(100);
-        deliver({ ...result, inputBytes, notes: result.note ? [result.note] : [] });
+        deliver({ ...result, inputBytes, original: selectedFiles[0], notes: result.note ? [result.note] : [] });
       }
     } catch (err) {
       if (cancelRequested) { show('s-ready'); $('ready-warn').innerHTML = '<p class="note-soft">Stopped. Nothing was saved; your file is still selected.</p>'; return; }
@@ -2857,6 +3010,12 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
       const items = sherpaPlanFor(shDest, e.meta);
       return `<div class="sherpa-file">${entries.length > 1 ? `<div class="ck-name">${escapeHtml(e.file.name)}</div>` : ''}<ul class="sherpa-list">${items.map(it => `<li class="${it.warn ? 'is-warn' : it.ok ? 'is-ok' : ''}"><span>${escapeHtml(it.text)}</span>${it.path ? `<button type="button" class="next-btn" data-shopen="${it.path}" data-shfile="${ckEntries.indexOf(e)}">${escapeHtml(it.label)} →</button>` : ''}</li>`).join('')}</ul></div>`;
     }).join('');
+    const kinds = new Set(entries.map(e => e.meta.kind)); const rid = kinds.size === 1 ? recipeFor(shDest, [...kinds][0]) : '';
+    if (rid && (RECIPES[rid].kind === 'image' || entries.length === 1)) {
+      const r = RECIPES[rid];
+      slot.insertAdjacentHTML('beforeend', `<div class="sherpa-recipe"><p><b>Or let Sherpa do it all in one go.</b> The “${escapeHtml(r.name)}” recipe will ${r.steps.map(st => st[2].charAt(0).toLowerCase() + st[2].slice(1)).join(', then ')}.</p><button type="button" class="btn btn-primary" id="sh-recipe">Run the ${escapeHtml(r.name)} recipe</button></div>`);
+      $('sh-recipe').addEventListener('click', async () => { const files = entries.map(e => e.file); openRecipe(rid); await handleFiles(files); });
+    }
     slot.querySelectorAll('[data-shopen]').forEach(b => b.addEventListener('click', () => sherpaOpen(b.dataset.shopen, [ckEntries[+b.dataset.shfile].file], b)));
   }
   async function sherpaOpen(path, files, btn) {
@@ -3136,6 +3295,14 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
   }
   linkToThisTool();
   renderHub();
+  (function mountPlus() {
+    const P = window.InkwellPlus; if (!P) return;
+    P.mountTrigger(document.querySelector('.navlinks'), 'Find a tool');
+    const foot = document.querySelector('#media-shell .foot');
+    if (foot) { const m = document.createElement('div'); m.className = 'foot-meter'; foot.appendChild(m); P.mountMeter(m, { what: 'Media tools edit your photos, videos and audio inside your own browser.' }); }
+    const hub = $('hub');
+    if (hub) { const box = document.createElement('section'); box.id = 'recent-box'; const ck = $('checkup'); hub.insertBefore(box, ck ? ck.nextSibling : hub.firstChild); P.mountRecent(box, { app: 'Media', limit: 3 }); }
+  })();
   const initialTool = document.body.dataset.tool;
   if (initialTool && TOOLS[initialTool]) {
     openTool(initialTool);
@@ -3147,7 +3314,8 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
   } else {
     $('tool').classList.add('hidden'); $('hub').classList.remove('hidden'); setupCheckup();
     const qs = new URLSearchParams(location.search);
-    if (qs.has('shared')) showSharedFiles();
+    if (qs.has('recipe') && RECIPES[qs.get('recipe')]) openRecipe(qs.get('recipe'));
+    else if (qs.has('shared')) showSharedFiles();
     else if (qs.has('sherpa')) {
       history.replaceState(null, '', location.pathname + '#checkup');
       takeHandoff().then(files => { $('checkup').scrollIntoView({ behavior: 'smooth' }); if (files.length) startCheckup(files); });

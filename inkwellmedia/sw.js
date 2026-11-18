@@ -1,14 +1,14 @@
 // Inkwell Media service worker — makes the Media tools work offline after a first visit.
 // Scope is "/" (tool pages live at the site root), so it ONLY handles Media URLs and leaves
 // everything else on inkwelltools.com (hub, /data, /VINLookup, guides) alone.
-const VERSION = 'v7c-2026-11-17';
+const VERSION = 'v8-2026-11-18';
 const SHELL = 'inkwell-media-shell-' + VERSION;
 const ENGINE = 'inkwell-media-engine-v2';
 const RUNTIME = 'inkwell-media-runtime-v1';
 
 const TOOL_PAGES = ['/compress-image/','/convert-image/','/resize-image/','/remove-background/','/crop-image/','/rotate-image/','/watermark-image/','/heic-to-jpg/','/remove-photo-location/','/compress-video/','/convert-to-mp4/','/video-to-gif/','/extract-audio/','/trim-video/','/resize-image-for-instagram/','/resize-image-for-linkedin/','/resize-youtube-thumbnail/','/resize-image-for-etsy/','/resize-image-for-shopify/','/compress-video-for-discord/','/compress-video-for-email/','/blur-faces/','/compress-image-to-size/','/compress-image-to-100kb/','/compress-image-to-200kb/','/compress-image-to-50kb/','/passport-photo/','/auto-captions/','/join-videos/','/mute-video/','/change-video-speed/','/even-out-audio-volume/','/resize-video-for-reels/','/add-subtitles-to-video/','/remove-background-noise/','/screen-recorder/','/photo-collage/','/add-text-to-image/','/profile-picture-maker/','/favicon-generator/','/gif-to-mp4/','/before-and-after-photo/','/meme-generator/','/resize-image-to-1080x1080/','/mp4-to-mp3/','/convert-image-to-webp/','/compress-video-for-whatsapp/','/tiktok-captions/','/screenshot-beautifier/','/color-palette-from-image/','/qr-code-generator/','/ringtone-maker/','/audiogram-maker/','/iphone-ringtone-maker/','/wifi-qr-code-generator/'];
-const SHELL_URLS = ['/inkwellmedia/','/inkwellmedia/media.css','/inkwellmedia/media.js','/inkwellmedia/media-shell.js','/inkwellmedia/sherpa.js','/inkwellmedia/sherpa-ai.js','/inkwellmedia/ffmpeg/ffmpeg.js','/inkwellmedia/ffmpeg/814.ffmpeg.js','/inkwellmedia/captions-worker.js','/favicon.svg','/favicon-32.png', ...TOOL_PAGES];
-const MEDIA_PREFIXES = ['/inkwellmedia/', ...TOOL_PAGES];
+const SHELL_URLS = ['/inkwell-plus.js','/tool-search-index.js','/inkwellmedia/','/inkwellmedia/media.css','/inkwellmedia/media.js','/inkwellmedia/media-shell.js','/inkwellmedia/sherpa.js','/inkwellmedia/sherpa-ai.js','/inkwellmedia/ffmpeg/ffmpeg.js','/inkwellmedia/ffmpeg/814.ffmpeg.js','/inkwellmedia/captions-worker.js','/favicon.svg','/favicon-32.png', ...TOOL_PAGES];
+const MEDIA_PREFIXES = ['/inkwellmedia/', '/inkwell-plus.js', '/tool-search-index.js', ...TOOL_PAGES];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {

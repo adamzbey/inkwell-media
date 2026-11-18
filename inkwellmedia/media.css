@@ -352,3 +352,70 @@
   .sherpa-howto li { margin:2px 0; } .sherpa-howto a { color:var(--brass); }
   .sherpa-hint { text-align:center; font-size:13.5px; color:var(--muted); margin:14px 0 0; }
   .sherpa-hint a { color:var(--brass); }
+
+  /* ---------- round 17 ---------- */
+  .recipe-card { width:100%; }
+  .recipe-card .tname, .recipe-card .tblurb { display:block; }
+  .recipe-card .ic { background:rgba(123,185,138,.14); }
+  .recipe-pre { margin:0 0 16px; text-align:left; }
+  .recipe-steps { list-style:none; counter-reset:rs; margin:0 0 12px; padding:0; display:grid; gap:8px; text-align:left; }
+  .recipe-steps li { counter-increment:rs; position:relative; padding:10px 12px 10px 46px; border:1px solid var(--ink-3); border-radius:11px; background:rgba(255,255,255,.02); }
+  .recipe-steps li::before { content:counter(rs); position:absolute; left:12px; top:10px; width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font-size:12.5px; font-weight:600; color:var(--brass); border:1px solid var(--brass-line); }
+  .recipe-steps li b { display:block; font-weight:600; font-size:14.5px; }
+  .recipe-steps li span { display:block; color:var(--muted); font-size:13px; margin-top:1px; }
+  .recipe-steps li.is-active { border-color:var(--brass-line); background:var(--brass-soft); }
+  .recipe-steps li.is-done::before { content:'✓'; color:#1a1305; background:var(--good); border-color:var(--good); }
+  .recipe-run .note-soft { display:none; }
+  .recipe-run .plabel { margin-top:14px; }
+  .sherpa-recipe { margin:14px 0 4px; padding:14px; border:1px solid var(--brass-line); border-radius:12px; background:var(--brass-soft); text-align:left; }
+  .sherpa-recipe p { margin:0 0 10px; font-size:14px; color:var(--paper); }
+
+  /* before / after slider */
+  .ba { position:relative; margin:18px auto 6px; max-width:100%; height:min(340px, 62vw); border-radius:12px; overflow:hidden; border:1px solid var(--ink-3); user-select:none; touch-action:pan-y; }
+  .ba-stage { position:absolute; inset:0; }
+  .ba-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; }
+  .ba-before { clip-path:inset(0 calc(100% - var(--pos)) 0 0); }
+  .ba-line { position:absolute; top:0; bottom:0; left:var(--pos); width:2px; margin-left:-1px; background:var(--brass); box-shadow:0 0 0 1px rgba(0,0,0,.25); pointer-events:none; }
+  .ba-knob { position:absolute; top:50%; left:50%; width:30px; height:30px; margin:-15px 0 0 -15px; border-radius:50%; background:var(--brass); box-shadow:0 2px 10px rgba(0,0,0,.45); }
+  .ba-knob::before { content:'‹ ›'; position:absolute; inset:0; display:grid; place-items:center; color:#1a1305; font-weight:700; font-size:14px; letter-spacing:2px; }
+  .ba-tag { position:absolute; top:10px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:600; padding:3px 8px; border-radius:6px; background:rgba(20,16,25,.72); color:var(--paper); pointer-events:none; }
+  .ba-tag-l { left:10px; } .ba-tag-r { right:10px; }
+  .ba-range { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:ew-resize; -webkit-appearance:none; appearance:none; }
+  .ba:has(.ba-range:focus-visible) { outline:2px solid var(--brass); outline-offset:3px; }
+  .ba.ba-full { width:100%; height:auto; max-height:62vh; aspect-ratio:auto !important; overflow:auto; }
+  .ba.ba-full .ba-stage { position:relative; inset:auto; }
+  .ba.ba-full .ba-tag { position:sticky; display:inline-block; margin:10px; top:10px; }
+  .ba-tools { text-align:center; margin:0 0 4px; }
+
+  /* each file in a batch */
+  .perfile { margin:4px 0 14px; text-align:left; border:1px solid var(--ink-3); border-radius:12px; padding:10px 14px; }
+  .perfile summary { cursor:pointer; font-size:13.5px; color:var(--paper); font-weight:600; }
+  .perfile-rows { display:grid; gap:6px; margin-top:10px; max-height:300px; overflow:auto; }
+  .pf-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 10px; align-items:center; padding:7px 0; border-top:1px solid rgba(255,255,255,.05); }
+  .pf-name { font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pf-size { grid-column:1; font-size:12.5px; color:var(--muted); }
+  .pf-row .linkbtn { grid-row:1 / span 2; grid-column:2; }
+  .pf-good { color:var(--good); }
+
+  /* a small finish moment */
+  .done-check { width:46px; height:46px; display:block; margin:0 auto 10px; fill:none; stroke:var(--brass); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+  .done-check circle { stroke-dasharray:145; stroke-dashoffset:0; opacity:.45; }
+  .done-check path { stroke-dasharray:40; stroke-dashoffset:0; }
+  .celebrate .done-check circle { animation:ik-ring .5s ease-out both; }
+  .celebrate .done-check path { animation:ik-tick .35s .3s ease-out both; }
+  .celebrate .headline { animation:ik-pop .45s .15s cubic-bezier(.2,1.4,.4,1) both; }
+  @keyframes ik-ring { from { stroke-dashoffset:145; } }
+  @keyframes ik-tick { from { stroke-dashoffset:40; } }
+  @keyframes ik-pop { from { transform:scale(.86); opacity:0; } }
+
+  /* Plus: meter in the footer, search pill in the nav */
+  .foot-meter { margin-top:10px; }
+  .navlinks .ikp-trigger { padding:5px 11px; font-size:13.5px; }
+  @media (max-width:560px){ .navlinks .ikp-trigger span:not(.ikp-kbd) { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); } .navlinks .ikp-trigger { padding:7px 9px; } }
+
+  /* phones: keep the main button within thumb reach */
+  @media (max-width:640px){
+    #s-ready #go, #s-done #download { position:sticky; bottom:10px; z-index:5; box-shadow:0 8px 24px rgba(0,0,0,.45), 0 0 0 6px var(--ink-2); }
+    .card { padding:18px 16px; }
+    .ba:not(.ba-full) { height:min(300px, 70vw); }
+  }

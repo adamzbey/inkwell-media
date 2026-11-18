@@ -10,6 +10,7 @@ Files are processed on the visitor's own device and are never uploaded.
 
 - `inkwellmedia/`: the shared code (`media.js`, `media-shell.js`, `captions-worker.js`, `sw.js`, styles and images) plus the bundled third-party libraries in `vendor/` and `ffmpeg/`.
 - One folder per tool page, for example `compress-video/`, `blur-faces/` and `passport-photo/`.
+- `inkwell-plus.js` / `inkwell-plus.css`: suite-wide extras the pages load from the site root (Ctrl+K tool search, "Pick up where you left off" kept in the browser, and the "Files uploaded: none" meter).
 
 The site is plain static files. There is no build step: serve the folder with any static web server.
 
