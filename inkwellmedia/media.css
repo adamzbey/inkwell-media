@@ -419,3 +419,9 @@
     .card { padding:18px 16px; }
     .ba:not(.ba-full) { height:min(300px, 70vw); }
   }
+
+/* ---------- round 18: text result, audio clip picker ---------- */
+.text-out { display: grid; gap: 10px; margin: 16px 0; text-align: left; }
+.text-out-box { width: 100%; box-sizing: border-box; min-height: 200px; font: 14.5px/1.55 Inter, system-ui, sans-serif; color: var(--paper); background: var(--ink); border: 1px solid var(--brass-line); border-radius: 12px; padding: 12px 14px; resize: vertical; }
+.text-out .transform-btn { justify-self: start; }
+.clip-video.clip-audio { height: 54px; background: transparent; }

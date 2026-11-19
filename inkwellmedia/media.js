@@ -314,6 +314,87 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     return blob;
   }
 
+
+  /* ---------- round 18: copy text from an image (Tesseract.js 5, Apache-2.0, self-hosted) ---------- */
+  const OCR_BASE = '/inkwellmedia/vendor/tesseract';
+  let ocrWorker = null, ocrLang = '';
+  async function ensureOcr(lang) {
+    await offlineCacheReady;
+    if (ocrWorker && ocrLang === lang) return ocrWorker;
+    if (ocrWorker) { try { (await ocrWorker).terminate(); } catch (_) {} ocrWorker = null; }
+    ocrLang = lang;
+    ocrWorker = (async () => {
+      const mod = await import(`${OCR_BASE}/tesseract.esm.min.js`);
+      const Tesseract = mod.default || mod;
+      return Tesseract.createWorker(lang, 1, {
+        workerPath: `${OCR_BASE}/worker.min.js`, corePath: `${OCR_BASE}/core`, langPath: `${OCR_BASE}/lang`, workerBlobURL: false, gzip: true,
+        logger: (m) => {
+          if (!$('w-label')) return;
+          if (m.status === 'recognizing text') { $('w-label').textContent = 'Reading the text…'; $('w-note').textContent = 'Working entirely on your device.'; setProgress(Math.round((m.progress || 0) * 100)); }
+          else if (/load|initializ/i.test(m.status || '')) { $('w-label').textContent = 'Loading the text reader…'; $('w-note').textContent = 'One-time download for this language; cached afterwards.'; if (m.progress) setProgress(Math.round(m.progress * 100)); }
+        },
+      });
+    })().catch((e) => { ocrWorker = null; ocrLang = ''; throw e; });
+    return ocrWorker;
+  }
+  async function ocrImage(file, lang, keepLines) {
+    const worker = await ensureOcr(lang);
+    const img = await loadImage(file);
+    // Small screenshots read better a little bigger; huge photos are shrunk to keep memory in check.
+    const long = Math.max(img.width, img.height);
+    const k = long < 1200 ? Math.min(2, 1600 / long) : long > 4000 ? 4000 / long : 1;
+    const canvas = drawToCanvas(img, Math.round(img.width * k), Math.round(img.height * k), { bg: '#ffffff' });
+    if (typeof img.close === 'function') img.close();
+    await worker.setParameters({ tessedit_pageseg_mode: '3', preserve_interword_spaces: '1' });
+    const { data } = await worker.recognize(canvas);
+    let text = (data.text || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (!keepLines) text = text.split(/\n{2,}/).map((p) => p.replace(/-\n(?=[a-z])/g, '').replace(/\n/g, ' ')).join('\n\n');
+    return text;
+  }
+
+  /* ---------- round 18: AI upscaling (UpscalerJS 1.0 + ESRGAN-medium, MIT; TensorFlow.js, Apache-2.0; self-hosted) ---------- */
+  const UP_BASE = '/inkwellmedia/vendor/upscale/';
+  const UPSCALE_MAX = { 2: 1200, 4: 600 };
+  let upscalerLib = null; const upscalers = {};
+  const loadScriptOnce = (src) => new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`) && window.tf) return res(); const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = () => rej(new Error('upscale-load')); document.head.append(el); });
+  async function ensureUpscaler() {
+    if (!upscalerLib) upscalerLib = (async () => {
+      await offlineCacheReady;
+      if (!window.tf) await loadScriptOnce(UP_BASE + 'tf.min.js');
+      if (!window.Upscaler) await loadScriptOnce(UP_BASE + 'upscaler.min.js');
+      return window.Upscaler;
+    })().catch((e) => { upscalerLib = null; throw e; });
+    return upscalerLib;
+  }
+  async function upscaleImage(file, scale) {
+    $('w-label').textContent = 'Loading the AI model…'; $('w-note').textContent = 'One-time download of about 3 MB; cached afterwards.';
+    const Upscaler = await ensureUpscaler();
+    if (!upscalers[scale]) upscalers[scale] = new Upscaler({ model: { scale, path: `${UP_BASE}x${scale}/model.json`, modelType: 'layers', inputRange: [0, 255], outputRange: [0, 255] } });
+    const up = upscalers[scale];
+    const img = await loadImage(file);
+    const max = UPSCALE_MAX[scale], long = Math.max(img.width, img.height);
+    const k = long > max ? max / long : 1;
+    const w = Math.max(1, Math.round(img.width * k)), h = Math.max(1, Math.round(img.height * k));
+    const canvas = drawToCanvas(img, w, h, { bg: '#ffffff' });
+    if (typeof img.close === 'function') img.close();
+    $('w-label').textContent = 'Enlarging…'; $('w-note').textContent = 'The model is working on your device. Bigger pictures take longer.';
+    const tf = window.tf;
+    const input = tf.browser.fromPixels(canvas);
+    let outT;
+    try {
+      outT = await up.upscale(input, { output: 'tensor', patchSize: 64, padding: 4, progress: (p) => setProgress(Math.round(p * 100)) });
+    } finally { input.dispose(); }
+    const pixels = tf.tidy(() => outT.clipByValue(0, 255).toInt());
+    outT.dispose();
+    const [H, W] = pixels.shape;
+    const out = document.createElement('canvas'); out.width = W; out.height = H;
+    await tf.browser.toPixels(pixels, out);
+    pixels.dispose();
+    const blob = await new Promise((res) => out.toBlob(res, 'image/png'));
+    const note = `${W} × ${H} px${k < 1 ? ` (the original was shrunk to ${w} × ${h} first)` : ''}.${/png|webp/i.test(file.type) ? ' Transparent areas come out white.' : ''}`;
+    return { blob, note };
+  }
+
   let zipLibrary = null;
   async function createZip(entries) {
     await offlineCacheReady;
@@ -610,6 +691,8 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
   }
 
   const escapeHtml = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  const isAudioFile = (file) => /^audio\//.test(file.type || '') || /\.(mp3|m4a|wav|aac|ogg|oga|opus|flac|wma|amr|aiff?)$/i.test(file.name || '');
+  const fmtDur = (sec) => { const t = Math.max(0, sec || 0); const m = Math.floor(t / 60), r = t - m * 60; return m ? `${m}:${r.toFixed(1).padStart(4, '0')}` : `${r.toFixed(1)} s`; };
   const isVideoFile = (file) => /^video\//.test(file.type || '') || /\.(mov|mp4|m4v|webm|mkv|avi)$/i.test(file.name || '');
   function sameVideoContainer(file) {
     const ext = (file.name.split('.').pop() || 'mp4').toLowerCase();
@@ -1394,6 +1477,9 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     mute: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6M17 9l6 6"/>',
     speed: '<path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/>',
     level: '<path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 8v8"/>',
+    ocr: '<path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"/><path d="M8 9h8M8 12h8M8 15h5"/>',
+    upscale: '<rect x="3" y="11" width="10" height="10" rx="1.5"/><path d="M14 3h7v7M21 3l-8 8"/>',
+    cut: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><path d="M3 3l6 6"/>',
     sparkle: '<path d="m12 3-1.4 3.6L7 8l3.6 1.4L12 13l1.4-3.6L17 8l-3.6-1.4z"/><path d="m5 14-.8 2.2L2 17l2.2.8L5 20l.8-2.2L8 17l-2.2-.8z"/><path d="m19 14-.8 2.2L16 17l2.2.8L19 20l.8-2.2L22 17l-2.2-.8z"/>',
   };
   const svg = (p, stroke='#cca24e') => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
@@ -1420,6 +1506,9 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     'audiogram': { note:'Only the clip you pick is used. Each second of video is drawn on your device, so keep it short.', softMB:150, hardMB:600 },
     'screenshot': { note:'Very large screenshots are fine on a computer.', softMB:40, hardMB:200 },
     'palette': { note:'The picture is shrunk before the colours are worked out, so any size is quick.', softMB:40, hardMB:200 },
+    'image-ocr': { note:'First use downloads the text reader for your language (about 3 MB), cached for later and offline use.', softMB:30, hardMB:120 },
+    'image-upscale': { note:'First use downloads a small AI model (about 3 MB). Enlarging takes from a few seconds to a minute or two; a computer is faster than a phone.', softMB:20, hardMB:80 },
+    'audio-cut': { note:'Long recordings are fine; converting a whole hour can take a few minutes.', softMB:200, hardMB:700 },
   };
   function limitsFor(id){
     if (LIMITS_BY_ID[id]) return LIMITS_BY_ID[id];
@@ -1431,6 +1520,7 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     if (eng === 'heic') return { note:'Large, high-resolution photos need more memory.', softMB:40, hardMB:100 };
     if (eng === 'face') return { note:'First use downloads a small face-finding model (~6 MB), cached for later and offline use.', softMB:40, hardMB:150 };
     if (eng === 'speech') return { note:'First use downloads a speech model (40–80 MB), cached afterwards. Longer recordings take longer; a computer is faster than a phone.', softMB:100, hardMB:500 };
+    if (eng === 'ocr') return { note:'First use downloads the text reader (about 3 MB a language).', softMB:30, hardMB:120 };
     if (eng === 'background') return { note:'First use downloads a background model (~40 MB), cached for later and offline use.', softMB:20, hardMB:60 };
     return { note:'Large, high-resolution photos need more memory.', softMB:40, hardMB:150 };
   }
@@ -1861,6 +1951,43 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
         return { blob, name:file.name.replace(/\.[^.]+$/,'')+'-no-background.png', mime:'image/png', compare:false };
       },
     },
+    'image-ocr': {
+      group:'Images', engine:'ocr', batch:true, name:'Copy text from an image', blurb:'Turn a screenshot or photo of text into text you can copy', icon:ICONS.ocr,
+      accept:'image/*,.heic,.heif', dropText:'Drop an image with text, or click to choose', dropSub:'Screenshots, scans, photos of documents or receipts · several at once for a ZIP',
+      options(host){
+        host.innerHTML = `<div class="field"><label for="ocr-lang">Language of the text</label><select id="ocr-lang">
+            <option value="eng">English</option><option value="spa">Spanish (español)</option><option value="eng+spa">English and Spanish</option><option value="fra">French (français)</option><option value="deu">German (Deutsch)</option></select></div>
+          <label class="opt-check"><input type="checkbox" id="ocr-lines" checked/> Keep the line breaks</label>
+          <div class="model-note"><b>Reads on your device</b><span>The text reader (about 3 MB per language) downloads once, then works offline. Your image never leaves your device.</span></div>`;
+        if (document.body.dataset.ocrlang) $('ocr-lang').value = document.body.dataset.ocrlang;
+      },
+      async run(file){
+        const text = await ocrImage(file, $('ocr-lang').value || 'eng', $('ocr-lines').checked);
+        const base = file.name.replace(/\.[^.]+$/,'');
+        const words = (text.match(/\S+/g) || []).length;
+        if (!words) return { blob:new Blob([''], { type:'text/plain' }), name:`${base}.txt`, mime:'text/plain', compare:false, note:`${file.name}: no text found. Try a sharper or larger picture, or the right language.` };
+        return { blob:new Blob([text], { type:'text/plain;charset=utf-8' }), name:`${base}.txt`, mime:'text/plain', compare:false, note:`${file.name}: ${words.toLocaleString('en-US')} word${words === 1 ? '' : 's'} found. Check names and numbers before you rely on them.` };
+      },
+    },
+    'image-upscale': {
+      group:'Images', engine:'upscale', name:'Upscale image', blurb:'Make a small or blurry photo 2× or 4× bigger with AI', icon:ICONS.upscale,
+      accept:'image/*,.heic,.heif', dropText:'Drop an image, or click to choose', dropSub:'JPG, PNG, WebP or HEIC · small images work best',
+      async options(host, file){
+        let info = '';
+        try { const img = await loadImage(file); info = `${img.width} × ${img.height} px now.`; if (typeof img.close === 'function') img.close(); } catch (_) {}
+        host.innerHTML = radios('up',[
+          {v:'2',n:'2× bigger',d:'Doubles the width and height. Quicker',def:true,tag:'Recommended'},
+          {v:'4',n:'4× bigger',d:'Four times the width and height. Best for small images and icons'},
+        ]) + `<p class="note-soft" style="text-align:left;margin:-4px 0 12px">${info} Big pictures are shrunk to ${UPSCALE_MAX[2]} px (2×) or ${UPSCALE_MAX[4]} px (4×) on the long side first, so it finishes in a reasonable time.</p>
+          <div class="model-note"><b>One-time model download (about 3 MB)</b><span>The AI model runs on your device and is cached for next time. It sharpens edges and texture; it can’t recover detail that was never in the photo.</span></div>`;
+      },
+      async run(file){
+        const scale = +(getRadio('up') || 2);
+        const out = await upscaleImage(file, scale);
+        const base = file.name.replace(/\.[^.]+$/,'');
+        return { blob:out.blob, name:`${base}-${scale}x.png`, mime:'image/png', compare:false, note: out.note };
+      },
+    },
     'image-crop': {
       group:'Images', engine:'canvas', name:'Crop image', blurb:'Drag to keep exactly what you need', icon:ICONS.crop,
       accept:'image/*,.heic,.heif', dropText:'Drop an image, or click to choose', dropSub:'Pick a shape, then drag to choose what to keep',
@@ -1989,6 +2116,37 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
       async run(file){
         const blob = await runFfmpeg(file, ['-vn','-c:a','libmp3lame','-q:a','2'], 'out.mp3','audio/mpeg');
         return { blob, name:file.name.replace(/\.[^.]+$/,'')+'.mp3', mime:'audio/mpeg', compare:false };
+      },
+    },
+    'audio-cut': {
+      group:'Video & audio', engine:'ffmpeg', name:'Cut & convert audio', blurb:'Trim an MP3, or turn WAV, M4A or OGG into MP3', icon:ICONS.cut,
+      accept:'audio/*,video/*,.mp3,.m4a,.wav,.aac,.ogg,.oga,.opus,.flac,.wma,.amr,.aiff,.aif,.webm', dropText:'Drop an audio file, or click to choose', dropSub:'MP3, M4A, WAV, OGG, FLAC, AAC, voice memos, or a video',
+      options(host, file){
+        const fmt = document.body.dataset.afmt || 'mp3';
+        setupClipPicker(host, file, { extraHtml: `<div class="field-row"><div class="field"><label for="ac-fmt">Save as</label><select id="ac-fmt">
+            <option value="mp3">MP3 (plays everywhere)</option><option value="m4a">M4A (AAC, Apple)</option><option value="wav">WAV (uncompressed, for editing)</option></select></div>
+            <div class="field"><label for="ac-q">Quality</label><select id="ac-q"><option value="128">Smaller file (128 kbps)</option><option value="192" selected>Standard (192 kbps)</option><option value="320">Best (320 kbps)</option></select></div></div>
+          <label class="opt-check"><input type="checkbox" id="ac-fade"/> Fade in and out</label>
+          <p class="note-soft" style="text-align:left;margin:4px 0 16px">To convert the whole file, leave the start at 0 and the end at the full length.</p>` });
+        $('ac-fmt').value = fmt;
+        const sync = () => { $('ac-q').disabled = $('ac-fmt').value === 'wav'; }; $('ac-fmt').addEventListener('change', sync); sync();
+        if (isAudioFile(file)) $('clip-video').classList.add('clip-audio');
+      },
+      async run(file){
+        const { s, e, len } = readClip($('opts'));
+        const dur = parseFloat($('opts').dataset.duration || '0');
+        const whole = s < 0.05 && (!dur || Math.abs(e - dur) < 0.15);
+        const fmt = $('ac-fmt').value, q = $('ac-q').value;
+        const af = [];
+        if ($('ac-fade').checked) af.push(`afade=t=in:d=${Math.min(1, len / 4).toFixed(2)}`, `afade=t=out:st=${Math.max(0, len - Math.min(1.5, len / 4)).toFixed(2)}:d=${Math.min(1.5, len / 4).toFixed(2)}`);
+        const args = ['-vn', ...(whole ? [] : ['-t', len.toFixed(3)]), ...(af.length ? ['-af', af.join(',')] : [])];
+        const pre = whole ? [] : ['-ss', s.toFixed(3)];
+        const base = file.name.replace(/\.[^.]+$/,'') + (whole ? '' : '-cut');
+        let blob, name, mime;
+        if (fmt === 'wav') { mime = 'audio/wav'; name = `${base}.wav`; blob = await runFfmpeg(file, [...args, '-c:a', 'pcm_s16le'], 'out.wav', mime, pre); }
+        else if (fmt === 'm4a') { mime = 'audio/mp4'; name = `${base}.m4a`; blob = await runFfmpeg(file, [...args, '-c:a', 'aac', '-b:a', q + 'k'], 'out.m4a', mime, pre); }
+        else { mime = 'audio/mpeg'; name = `${base}.mp3`; blob = await runFfmpeg(file, [...args, '-c:a', 'libmp3lame', '-b:a', q + 'k'], 'out.mp3', mime, pre); }
+        return { blob, name, mime, compare:false, note: whole ? `Converted the whole file (${fmtDur(dur || len)}).` : `Kept ${fmtDur(len)}, from ${fmtDur(s)} to ${fmtDur(e)}.` };
       },
     },
     'video-trim': {
@@ -2585,7 +2743,10 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     'palette':'/color-palette-from-image/',
     'qr-code':'/qr-code-generator/',
     'ringtone':'/ringtone-maker/',
-    'audiogram':'/audiogram-maker/'
+    'audiogram':'/audiogram-maker/',
+    'image-ocr':'/image-to-text/',
+    'image-upscale':'/upscale-image/',
+    'audio-cut':'/audio-cutter/'
   };
 
   function renderHub() {
@@ -2737,6 +2898,11 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     else if (mime.startsWith('image/')) preview.innerHTML = `<img class="preview checkerboard" src="${outUrl}" alt="result preview"/>`;
     else if (mime.startsWith('video/')) preview.innerHTML = `<video class="preview" src="${outUrl}" controls></video>`;
     else if (mime.startsWith('audio/')) preview.innerHTML = `<audio style="width:100%;margin:16px 0" src="${outUrl}" controls></audio>`;
+    else if (mime.startsWith('text/')) {
+      preview.innerHTML = `<div class="text-out"><textarea id="text-out" class="text-out-box" rows="10" spellcheck="false" aria-label="The text found in your image"></textarea><button type="button" class="transform-btn" id="text-copy">Copy the text</button></div>`;
+      blob.text().then((tx) => { $('text-out').value = tx || ''; });
+      $('text-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('text-out').value); $('text-copy').textContent = 'Copied'; } catch (_) { $('text-out').select(); } setTimeout(() => { const b = $('text-copy'); if (b) b.textContent = 'Copy the text'; }, 1800); });
+    }
     if (notes.length) {
       const shown = notes.slice(0, 8).map(n => `<li>${escapeHtml(n)}</li>`).join('');
       noteSlot.insertAdjacentHTML('beforeend', `<ul class="result-notes">${shown}${notes.length > 8 ? `<li>…and ${notes.length - 8} more.</li>` : ''}</ul>`);
@@ -3073,7 +3239,7 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
 
   /* ---------- next steps after a result ---------- */
   const NEXT_STEPS = {
-    audio: [['ringtone','Make a ringtone'],['audiogram','Make an audiogram video'],['audio-denoise','Reduce background noise'],['audio-level','Even out the volume']],
+    audio: [['audio-cut','Cut or convert it'],['ringtone','Make a ringtone'],['audiogram','Make an audiogram video'],['audio-denoise','Reduce background noise'],['audio-level','Even out the volume']],
     image: [['blur-faces','Blur faces & plates'],['image-text','Add text'],['image-collage','Make a collage'],['strip-metadata','Remove location & camera data'],['image-to-size','Compress to a size'],['image-resize','Resize it for a site'],['image-watermark','Add a watermark'],['image-convert','Change the format'],['palette','Get its colour palette']],
     video: [['video-captions','Add captions'],['video-vertical','Make it 9:16 for Reels'],['audio-denoise','Reduce background noise'],['video-compress','Compress it'],['video-trim','Trim it'],['audio-level','Even out the volume'],['video-gif','Make a GIF'],['video-mute','Remove the sound'],['strip-metadata','Remove location data']],
   };
@@ -3253,7 +3419,7 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
 
   /* ---------- round 15: files shared from the phone's share sheet ---------- */
   const SHARE_TOOLS = {
-    image: [['image-compress','Compress'],['image-resize','Resize'],['image-text','Add text'],['remove-background','Remove the background'],['blur-faces','Blur faces & plates'],['strip-metadata','Remove location data'],['image-collage','Make a collage'],['image-convert','Change the format']],
+    image: [['image-compress','Compress'],['image-resize','Resize'],['image-upscale','Make it bigger (AI)'],['image-ocr','Copy the text in it'],['image-text','Add text'],['remove-background','Remove the background'],['blur-faces','Blur faces & plates'],['strip-metadata','Remove location data'],['image-collage','Make a collage'],['image-convert','Change the format']],
     video: [['video-compress','Compress'],['video-trim','Trim'],['video-captions','Add captions'],['video-vertical','Make it 9:16 for Reels'],['video-gif','Make a GIF'],['extract-audio','Save the sound as MP3'],['video-mute','Remove the sound'],['strip-metadata','Remove location data']],
     audio: [['ringtone','Make a ringtone'],['audiogram','Make an audiogram video'],['audio-denoise','Reduce background noise'],['audio-level','Even out the volume']],
   };
