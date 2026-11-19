@@ -2749,19 +2749,42 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     'audio-cut':'/audio-cutter/'
   };
 
+  const HUB_POPULAR = ['image-compress','image-resize','image-convert','heic-jpg','remove-background','strip-metadata','video-compress','video-mp4','video-trim','extract-audio','video-captions','image-ocr','image-to-size','video-gif'];
   function renderHub() {
     const groups = {};
     for (const id in TOOLS) { const t = TOOLS[id]; if (t.hidden) continue; (groups[t.group] = groups[t.group] || []).push([id,t]); }
-    let html = recipesHtml();
+    const cat = (g) => g === 'Images' ? 'image' : 'av';
+    const tile = (id, t, cats) => `<a class="tool" href="${TOOL_PATHS[id]}" data-cat="${cats}"><span class="ic">${svg(t.icon)}</span><span><span class="tname">${t.name}</span><span class="tblurb">${t.blurb}</span></span></a>`;
+    let html = `<div class="hub-filter" role="group" aria-label="Show tools"><button type="button" class="hf-chip" data-f="popular" aria-pressed="true">Popular</button><button type="button" class="hf-chip" data-f="image" aria-pressed="false">Images (${(groups.Images||[]).length})</button><button type="button" class="hf-chip" data-f="av" aria-pressed="false">Video &amp; audio (${(groups['Video & audio']||[]).length})</button><button type="button" class="hf-chip" data-f="recipe" aria-pressed="false">Recipes</button><button type="button" class="hf-chip" data-f="all" aria-pressed="false">All tools</button></div>`;
+    html += `<div class="hub-sec" data-sec="recipe">${recipesHtml()}</div>`;
     for (const g in groups) {
-      html += `<div class="grouphdr">${g}</div><div class="grid">`;
-      for (const [id,t] of groups[g]) {
-        html += `<a class="tool" href="${TOOL_PATHS[id]}"><span class="ic">${svg(t.icon)}</span><span><span class="tname">${t.name}</span><span class="tblurb">${t.blurb}</span></span></a>`;
-      }
-      html += `</div>`;
+      html += `<div class="hub-sec" data-sec="${cat(g)}"><div class="grouphdr">${g}</div><div class="grid">`;
+      for (const [id,t] of groups[g]) html += tile(id, t, cat(g) + (HUB_POPULAR.includes(id) ? ' popular' : ''));
+      html += `</div></div>`;
     }
-    $('hub-groups').innerHTML = html;
-    $('hub-groups').querySelectorAll('[data-recipe]').forEach((b) => b.addEventListener('click', () => openRecipe(b.dataset.recipe)));
+    const total = Object.values(groups).reduce((n, g) => n + g.length, 0);
+    html += `<p class="hub-more" id="hub-more"><button type="button" class="linkish" data-f="all">See all ${total} tools</button> or <button type="button" class="linkish" data-f="recipe">recipes that do several steps at once</button></p>`;
+    const host = $('hub-groups');
+    host.innerHTML = html;
+    host.querySelectorAll('[data-recipe]').forEach((b) => b.addEventListener('click', () => openRecipe(b.dataset.recipe)));
+    const apply = (f) => {
+      host.querySelectorAll('.hf-chip').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.f === f)));
+      host.querySelectorAll('.hub-sec').forEach((sec) => {
+        const s = sec.dataset.sec;
+        if (s === 'recipe') { sec.hidden = !(f === 'recipe' || f === 'all'); return; }
+        let any = false;
+        sec.querySelectorAll('.tool').forEach((t) => { const c = t.dataset.cat.split(' '); const on = f === 'all' || c.includes(f); t.hidden = !on; if (on) any = true; });
+        sec.hidden = !any;
+        const hdr = sec.querySelector('.grouphdr'); if (hdr) hdr.hidden = f === 'popular' ? false : f !== 'all';
+      });
+      host.querySelector('#hub-more').hidden = f !== 'popular';
+      try { sessionStorage.setItem('inkwellMedia.hubFilter', f); } catch (e) {}
+    };
+    host.querySelector('.hub-filter').addEventListener('click', (e) => { const c = e.target.closest('.hf-chip'); if (c) apply(c.dataset.f); });
+    host.querySelector('#hub-more').addEventListener('click', (e) => { const c = e.target.closest('[data-f]'); if (c) { apply(c.dataset.f); host.querySelector('.hub-filter').scrollIntoView({ block: 'start', behavior: 'smooth' }); } });
+    let f0 = 'popular'; try { f0 = sessionStorage.getItem('inkwellMedia.hubFilter') || 'popular'; } catch (e) {}
+    if (location.hash === '#recipes') f0 = 'recipe';
+    apply(host.querySelector(`.hf-chip[data-f="${f0}"]`) ? f0 : 'popular');
   }
 
   /* ---------- tool flow ---------- */
@@ -2807,9 +2830,9 @@ import { DESTS as SHERPA_DESTS, planFor as sherpaPlanFor, mountMediaAsk } from '
     $('drop-big').textContent = current.dropText;
     $('drop-small').textContent = current.dropSub;
     const limits = limitsFor(id);
-    $('capacity-recommended').textContent = `Under ~${mbLabel(limits.softMB)} per file`;
-    $('capacity-maximum').textContent = `${mbLabel(limits.hardMB)} per file`;
-    $('capacity-note').textContent = `Files stay on your device. Available browser memory may limit processing below the maximum. ${limits.note}${currentId === 'recipe' ? ' Several files run one at a time; the final ZIP also needs memory.' : current.batch ? ' Batches run one image at a time; the final ZIP also needs memory. Try fewer images if a batch fails.' : ' Choose one file at a time.'}`;
+    $('capacity-recommended').textContent = `~${mbLabel(limits.softMB)}`;
+    $('capacity-maximum').textContent = mbLabel(limits.hardMB);
+    $('capacity-note').textContent = `Available browser memory may limit processing below the maximum. ${limits.note}${currentId === 'recipe' ? ' Several files run one at a time; the final ZIP also needs memory.' : current.batch ? ' Batches run one image at a time; the final ZIP also needs memory. Try fewer images if a batch fails.' : ' Choose one file at a time.'}`;
     $('ready-warn').innerHTML=''; $('done-note').innerHTML='';
     document.querySelector('.seo-intro')?.classList.remove('hidden');
     document.querySelector('.faq')?.classList.remove('hidden');

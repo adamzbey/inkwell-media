@@ -48,11 +48,10 @@ mediaShell.innerHTML = `
       </div>
 
       <aside class="capacity" id="tool-capacity" aria-label="File size and processing limits">
-        <dl class="capacity-sizes">
-          <div><dt>Recommended size</dt><dd id="capacity-recommended"></dd></div>
-          <div><dt>Maximum file size</dt><dd id="capacity-maximum"></dd></div>
-        </dl>
-        <p id="capacity-note"></p>
+        <details class="cap-d">
+          <summary><span class="cap-line">Files stay on your device · best under <b id="capacity-recommended"></b>, up to <b id="capacity-maximum"></b> each</span><span class="cap-more">Size tips</span></summary>
+          <p id="capacity-note"></p>
+        </details>
       </aside>
 
       <div id="s-working" class="hidden">
