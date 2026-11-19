@@ -8,7 +8,7 @@
   'use strict';
   if (window.InkwellPlus) return;
   const me = document.currentScript;
-  const cfg = Object.assign({ hotkey: true, indexUrl: '/tool-search-index.js?v=r17' }, window.INKWELL_PLUS || {});
+  const cfg = Object.assign({ hotkey: true, indexUrl: '/tool-search-index.js?v=r18' }, window.INKWELL_PLUS || {});
   if (me && me.dataset.hotkey === 'off') cfg.hotkey = false; // pages with their own Ctrl+K (Inkwell Data) keep it
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmtSize = (b) => b < 1024 ? b + ' B' : b < 1048576 ? Math.round(b / 1024) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
@@ -68,6 +68,25 @@
 .ikp-recent-foot{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin-top:10px;font-size:12.5px;opacity:.85}
 .ikp-recent-foot button{font:inherit;color:inherit;background:none;border:0;text-decoration:underline;cursor:pointer;padding:0}
 .ikp-recent-foot label{display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.ikp-fb{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:2147482000;width:min(340px,calc(100vw - 32px));background:#1a1524;color:#f3eee6;border:1px solid rgba(204,162,78,.45);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.45);padding:14px 16px;font:14px/1.45 Inter,system-ui,sans-serif;text-align:left}
+.ikp-fb:not(.ikp-still){animation:ikp-in .18s ease-out}
+.ikp-fb-q{margin:0 26px 10px 0;font-weight:600}
+.ikp-fb-t{display:block;font-weight:400;font-size:12.5px;color:#b5abc6;margin-top:1px}
+.ikp-fb-x{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:0;background:none;color:#b5abc6;font-size:20px;line-height:1;cursor:pointer}
+.ikp-fb-x:hover,.ikp-fb-x:focus-visible{color:#f3eee6;background:rgba(243,238,230,.08);outline:none}
+.ikp-fb-btns{display:flex;gap:8px;flex-wrap:wrap}
+.ikp-fb-btns button,.ikp-fb-send{font:inherit;font-size:13.5px;color:#f3eee6;background:rgba(243,238,230,.06);border:1px solid rgba(204,162,78,.5);border-radius:999px;padding:6px 14px;cursor:pointer}
+.ikp-fb-btns button:hover,.ikp-fb-btns button:focus-visible,.ikp-fb-send:hover,.ikp-fb-send:focus-visible{background:rgba(204,162,78,.18);outline:none}
+.ikp-fb-btns button[aria-pressed=true]{background:rgba(204,162,78,.28);border-color:#cca24e}
+.ikp-fb-more{margin-top:10px}
+.ikp-fb-more[hidden]{display:none}
+.ikp-fb-more textarea{width:100%;box-sizing:border-box;min-height:70px;resize:vertical;background:rgba(243,238,230,.05);color:#f3eee6;border:1px solid rgba(243,238,230,.2);border-radius:10px;padding:8px 10px;font:inherit;font-size:13.5px}
+.ikp-fb-more textarea:focus{outline:2px solid #cca24e;outline-offset:1px}
+.ikp-fb-row{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+.ikp-fb-note{font-size:11.5px;color:#b5abc6;flex:1 1 160px}
+.ikp-fb-done{margin:8px 0 0;font-size:13px;color:#cca24e}
+.ikp-fb-done:empty{display:none}
+@media (max-width:640px){.ikp-fb{right:12px;left:12px;width:auto;bottom:calc(84px + env(safe-area-inset-bottom,0px))}}
 .ikp-sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 `;
   function injectCss() { if (document.getElementById('ikp-css') || document.querySelector('link[href*="inkwell-plus.css"]')) return; /* strict-CSP pages link the .css file instead */ const s = document.createElement('style'); s.id = 'ikp-css'; s.textContent = css; (document.head || document.documentElement).appendChild(s); }
@@ -81,7 +100,7 @@
     let u; try { u = new URL(url, location.href); } catch (_) { return 'another site'; }
     if (AI_HOSTS.test(u.hostname)) return 'A question to Sherpa AI (with your own key; no files)';
     if (/cloudflareinsights\.com$/.test(u.hostname)) return 'An anonymous page-view count';
-    if (u.origin === location.origin) return 'A form you sent us (like your email or a message)';
+    if (u.origin === location.origin) return 'A form you sent us (like feedback or a message)';
     return 'A request to ' + u.hostname;
   }
   function bodyInfo(body) {
@@ -183,7 +202,67 @@
       return all.filter((j) => now - j.at <= RECORD_DAYS * DAY).sort((a, b) => b.at - a.at);
     } catch (_) { return []; }
   }
+
+  /* ---------------- round 18: "Did this do what you needed?" after a finished job ----------------
+     One tap, anonymous, sent to Netlify Forms on this site (form "feedback"). Asked at most once a page,
+     and not again for the same tool for 14 days. */
+  const FB_KEY = 'inkwellPlus.fb.v1';
+  const fbSeen = () => { try { return JSON.parse(localStorage.getItem(FB_KEY) || '{}'); } catch (_) { return {}; } };
+  let fbShown = false;
+  function postFeedback(data) {
+    const body = new URLSearchParams(Object.assign({ 'form-name': 'feedback', 'bot-field': '' }, data)).toString();
+    try { return fetch('/', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body }).catch(() => {}); } catch (_) { return Promise.resolve(); }
+  }
+  function maybeAskFeedback(job) {
+    if (fbShown || cfg.feedback === false || (me && me.dataset.feedback === 'off')) return;
+    const key = (job.app || '') + '|' + (job.tool || '');
+    const seen = fbSeen();
+    if (seen[key] && Date.now() - seen[key] < 14 * 864e5) return;
+    fbShown = true;
+    setTimeout(() => showFeedback(job, key), 1400);
+  }
+  function showFeedback(job, key) {
+    injectCss();
+    const base = { app: job.app || 'Inkwell', tool: job.tool || '', page: location.pathname };
+    const es = /^es/i.test(document.documentElement.lang || '');
+    const L = es ? { q: '¿Esto hizo lo que necesitabas?', yes: '👍 Sí', no: '👎 No del todo', more: 'Cuéntanos más (opcional)', send: 'Enviar', note: 'Anónimo. No incluyas datos personales.', ph1: '¡Gracias! ¿Qué deberíamos agregar? (opcional)', ph2: '¿Qué salió mal o qué esperabas? (opcional)', t1: 'Gracias, nos ayuda.', t2: 'Gracias, leemos todos los mensajes.', t3: '¡Gracias!', close: 'Cerrar', aria: 'Comentarios rápidos' }
+      : { q: 'Did this do what you needed?', yes: '👍 Yes', no: '👎 Not quite', more: 'Tell us more (optional)', send: 'Send', note: 'Anonymous. Please don’t include personal details.', ph1: 'Thanks! Anything we should add? (optional)', ph2: 'What went wrong, or what did you expect? (optional)', t1: 'Thanks, that helps.', t2: 'Thanks, we read every message.', t3: 'Thanks!', close: 'Close', aria: 'Quick feedback' };
+    const box = document.createElement('section');
+    box.className = 'ikp-fb' + (reduceMotion() ? ' ikp-still' : '');
+    box.setAttribute('aria-label', L.aria);
+    box.innerHTML = `<button type="button" class="ikp-fb-x" aria-label="${L.close}">×</button>
+      <p class="ikp-fb-q">${L.q}${job.tool ? `<span class="ikp-fb-t">${esc(job.tool)}</span>` : ''}</p>
+      <div class="ikp-fb-btns"><button type="button" data-v="yes" aria-pressed="false">${L.yes}</button><button type="button" data-v="no" aria-pressed="false">${L.no}</button></div>
+      <div class="ikp-fb-more" hidden><label class="ikp-sr" for="ikp-fb-c">${L.more}</label><textarea id="ikp-fb-c" rows="3" maxlength="1000"></textarea>
+        <div class="ikp-fb-row"><button type="button" class="ikp-fb-send">${L.send}</button><span class="ikp-fb-note">${L.note}</span></div></div>
+      <p class="ikp-fb-done" role="status" aria-live="polite"></p>`;
+    document.body.appendChild(box);
+    const mark = () => { const s = fbSeen(); s[key] = Date.now(); try { localStorage.setItem(FB_KEY, JSON.stringify(s)); } catch (_) {} };
+    const close = () => { mark(); box.remove(); };
+    let vote = '';
+    box.querySelector('.ikp-fb-x').addEventListener('click', close);
+    box.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    box.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => {
+      if (vote) return;
+      vote = b.dataset.v; mark();
+      box.querySelectorAll('[data-v]').forEach((x) => { x.setAttribute('aria-pressed', String(x === b)); x.disabled = true; });
+      postFeedback(Object.assign({ kind: 'vote', vote }, base));
+      const ta = box.querySelector('textarea');
+      ta.placeholder = vote === 'yes' ? L.ph1 : L.ph2;
+      box.querySelector('.ikp-fb-more').hidden = false;
+      box.querySelector('.ikp-fb-done').textContent = L.t1;
+      ta.focus();
+    }));
+    box.querySelector('.ikp-fb-send').addEventListener('click', () => {
+      const comment = box.querySelector('textarea').value.trim().slice(0, 1000);
+      if (comment) postFeedback(Object.assign({ kind: 'comment', vote, comment }, base));
+      box.querySelector('.ikp-fb-more').hidden = true;
+      box.querySelector('.ikp-fb-done').textContent = comment ? L.t2 : L.t3;
+      setTimeout(() => box.remove(), 2200);
+    });
+  }
   async function recordJob(job) {
+    try { maybeAskFeedback(job || {}); } catch (_) {}
     if (!keepOn()) return;
     try {
       const outputs = (job.outputs || []).filter((o) => o && o.blob);
@@ -364,5 +443,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', autoMount); else autoMount();
 
-  window.InkwellPlus = { recordJob, listJobs, clearJobs, mountRecent, mountMeter, mountTrigger, openPalette, closePalette, sent, _search: (q) => loadIndex().then(() => search(q)) };
+  window.InkwellPlus = { recordJob, askFeedback: (job) => showFeedback(job || {}, ((job && job.app) || '') + '|' + ((job && job.tool) || '')), listJobs, clearJobs, mountRecent, mountMeter, mountTrigger, openPalette, closePalette, sent, _search: (q) => loadIndex().then(() => search(q)) };
 })();

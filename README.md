@@ -35,3 +35,9 @@ Third-party software is used unmodified, under its own licence:
 | Transformers.js | Apache-2.0 | https://github.com/huggingface/transformers.js |
 | Whisper speech model | MIT | https://github.com/openai/whisper |
 | qrcode-generator | MIT | https://github.com/kazuhikoarase/qrcode-generator |
+
+## Round 18 (Nov 19, 2026)
+- Copy text from an image (`/image-to-text/`): Tesseract.js 5 (Apache-2.0) with English, Spanish, French and German models, self-hosted in `inkwellmedia/vendor/tesseract/`.
+- Upscale image (`/upscale-image/`): UpscalerJS 1.0 with the ESRGAN-medium 2× and 4× models (MIT) on TensorFlow.js 4.22 (Apache-2.0), self-hosted in `inkwellmedia/vendor/upscale/`.
+- Cut & convert audio (`/audio-cutter/`, `/convert-audio-to-mp3/`) with ffmpeg.wasm.
+- inkwell-plus.js: a one-tap "Did this do what you needed?" card after a finished job, posted to a Netlify form named `feedback`.
